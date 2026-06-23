@@ -1,0 +1,946 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>みのがしくん</title>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<style>
+:root{
+  --water:#5b9cb8;
+  --water-deep:#3f7d97;
+  --bg:#e8f1f5;
+  --panel:#eef5f8;
+  --ink:#2c4a57;
+  --ink-soft:#5a7d8a;
+  --hi:#ffffff;
+  --lo:#c5d6de;
+  --line:#d4e3ea;
+  --good:#5bb888;
+  --warn:#d39a5b;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{
+  background:var(--bg);
+  color:var(--ink);
+  font-family:"Hiragino Sans","Hiragino Kaku Gothic ProN","Yu Gothic UI","Meiryo",system-ui,sans-serif;
+  -webkit-font-smoothing:antialiased;
+  overflow-x:hidden;
+}
+.wrap{max-width:980px;margin:0 auto;padding:22px 16px 60px;min-height:100%}
+
+/* ---- neumorphic primitives ---- */
+.np{
+  background:var(--panel);
+  border-radius:20px;
+  box-shadow:8px 8px 18px var(--lo), -8px -8px 18px var(--hi);
+}
+.np-in{
+  background:var(--panel);
+  border-radius:16px;
+  box-shadow:inset 5px 5px 11px var(--lo), inset -5px -5px 11px var(--hi);
+}
+.btn{
+  font:inherit;font-weight:700;color:var(--water-deep);
+  background:var(--panel);border:none;border-radius:16px;cursor:pointer;
+  padding:13px 22px;letter-spacing:.02em;
+  box-shadow:6px 6px 13px var(--lo), -6px -6px 13px var(--hi);
+  transition:box-shadow .12s ease, transform .12s ease, color .12s ease;
+}
+.btn:hover{transform:translateY(-1px)}
+.btn:active{box-shadow:inset 4px 4px 9px var(--lo), inset -4px -4px 9px var(--hi);transform:translateY(0)}
+.btn.primary{color:#fff;background:linear-gradient(135deg,var(--water),var(--water-deep));
+  box-shadow:6px 6px 13px var(--lo), -6px -6px 13px var(--hi)}
+.btn.primary:active{box-shadow:inset 3px 3px 8px rgba(0,0,0,.18)}
+.btn.ghost{padding:9px 14px;font-size:.86rem}
+.btn[disabled]{opacity:.5;cursor:default;transform:none}
+
+/* ---- start screen ---- */
+#startScreen{min-height:72vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:30px;text-align:center}
+.logo{font-size:2.7rem;font-weight:800;letter-spacing:.06em;color:var(--water-deep)}
+.logo small{display:block;font-size:.82rem;font-weight:600;letter-spacing:.34em;color:var(--ink-soft);margin-top:10px}
+.start-row{display:flex;gap:16px;flex-wrap:wrap;justify-content:center}
+.hint{font-size:.8rem;color:var(--ink-soft);max-width:430px;line-height:1.7}
+
+/* ---- registration ---- */
+.reg-grid{display:grid;grid-template-columns:1fr 270px;gap:18px;align-items:start}
+@media(max-width:760px){.reg-grid{grid-template-columns:1fr}}
+.preview-pane{padding:14px}
+.preview-pane h2{margin:2px 4px 10px;font-size:.95rem;color:var(--ink-soft);font-weight:700}
+#previewCanvas{width:100%;height:auto;border-radius:12px;display:block;cursor:crosshair;background:#11181c}
+.preview-pane .sub{margin:9px 4px 2px;font-size:.76rem;color:var(--ink-soft);line-height:1.6}
+.side{padding:16px;display:flex;flex-direction:column;gap:12px}
+.side h2{margin:0;font-size:.95rem;color:var(--ink-soft);font-weight:700}
+#playerList{display:flex;flex-direction:column;gap:9px;min-height:30px}
+.pl-item{display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:12px;
+  box-shadow:inset 3px 3px 7px var(--lo), inset -3px -3px 7px var(--hi)}
+.pl-item img{height:24px;border-radius:5px;background:#11181c}
+.pl-item .nm{flex:1;font-weight:700;font-size:.88rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pl-item .del{cursor:pointer;color:var(--ink-soft);font-weight:800;border:none;background:none;font-size:1rem;line-height:1}
+.empty-note{font-size:.78rem;color:var(--ink-soft);padding:6px 2px}
+
+/* ---- name dialog ---- */
+.modal-bg{position:fixed;inset:0;background:rgba(30,55,68,.34);backdrop-filter:blur(3px);
+  display:flex;align-items:center;justify-content:center;z-index:50;padding:18px}
+.modal{max-width:360px;width:100%;padding:22px;text-align:center}
+.modal h3{margin:0 0 14px;font-size:1.02rem}
+.crop-box{padding:12px;border-radius:12px;display:inline-block;margin-bottom:14px;
+  box-shadow:inset 3px 3px 7px var(--lo), inset -3px -3px 7px var(--hi);background:#11181c}
+.crop-box img{display:block;max-width:280px;border-radius:4px}
+.modal input{width:100%;font:inherit;font-weight:700;color:var(--ink);text-align:center;
+  padding:12px;border:none;border-radius:12px;margin-bottom:16px;
+  box-shadow:inset 4px 4px 9px var(--lo), inset -4px -4px 9px var(--hi);background:var(--panel)}
+.modal input:focus{outline:2px solid var(--water)}
+.modal-row{display:flex;gap:12px;justify-content:center}
+
+/* ---- run screen ---- */
+.topbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:13px 16px;margin-bottom:16px}
+.topbar .ttl{font-weight:800;color:var(--water-deep);font-size:1.05rem;letter-spacing:.04em}
+.topbar .spacer{flex:1}
+.status-line{font-size:.78rem;color:var(--ink-soft);padding:10px 14px;margin-bottom:14px;line-height:1.7}
+.status-line b{color:var(--water-deep)}
+
+details.cfg{margin-bottom:16px;padding:0;overflow:hidden}
+details.cfg>summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:700;font-size:.88rem;color:var(--ink-soft)}
+details.cfg>summary::-webkit-details-marker{display:none}
+details.cfg>summary::before{content:"⚙ ";opacity:.7}
+.cfg-body{padding:4px 16px 18px;display:flex;flex-direction:column;gap:16px}
+.cfg-row{display:flex;flex-direction:column;gap:6px}
+.cfg-row label{font-size:.8rem;color:var(--ink-soft);font-weight:700;display:flex;justify-content:space-between}
+.cfg-row label .val{color:var(--water-deep)}
+.cfg-row input[type=range]{width:100%;accent-color:var(--water)}
+.cfg-check{display:flex;align-items:center;gap:9px;font-size:.82rem;color:var(--ink-soft);font-weight:700}
+.cfg-check input{width:17px;height:17px;accent-color:var(--water)}
+
+#chatContainer{display:flex;flex-direction:column;gap:12px}
+.chat-entry{padding:12px 14px;border-radius:16px;animation:pop .28s ease}
+@keyframes pop{from{opacity:0;transform:translateY(-7px)}to{opacity:1;transform:none}}
+.chat-head{display:flex;align-items:baseline;gap:10px;margin-bottom:9px}
+.chat-name{font-weight:800;color:var(--water-deep);font-size:.96rem}
+.chat-time{font-size:.72rem;color:var(--ink-soft);margin-left:auto}
+.chat-img{border-radius:9px;overflow:hidden;background:#11181c;display:inline-block;padding:6px 8px}
+.chat-img img{display:block;max-width:100%;height:auto;image-rendering:auto}
+.feed-empty{padding:26px;text-align:center;color:var(--ink-soft);font-size:.85rem;line-height:1.8}
+
+details.dbg{margin-top:20px;padding:0;overflow:hidden}
+details.dbg>summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:700;font-size:.85rem;color:var(--ink-soft)}
+details.dbg>summary::-webkit-details-marker{display:none}
+details.dbg>summary::before{content:"🔍 ";opacity:.8}
+.dbg-body{padding:6px 16px 18px}
+#debugCanvas{width:100%;height:auto;border-radius:10px;display:block;background:#11181c}
+.dbg-legend{font-size:.74rem;color:var(--ink-soft);margin-top:8px;display:flex;gap:16px;flex-wrap:wrap}
+.dbg-legend span::before{content:"■ ";font-size:.9em}
+.lg-chat::before{color:#5bd6a0}
+.lg-name::before{color:#6cb8e6}
+
+/* PiP body */
+.pip-body{margin:0;padding:14px;background:var(--bg);font-family:inherit}
+.pip-body #chatContainer{gap:12px}
+
+/* OCR status pill */
+#ocrStatus{font-size:.74rem;color:var(--ink-soft);padding:6px 12px;border-radius:10px;
+  box-shadow:inset 3px 3px 6px var(--lo), inset -3px -3px 6px var(--hi)}
+#ocrStatus.ready{color:var(--good)}
+#ocrStatus.err{color:var(--warn)}
+
+/* toast */
+#toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(20px);
+  background:var(--water-deep);color:#fff;padding:11px 20px;border-radius:14px;font-size:.85rem;font-weight:700;
+  opacity:0;pointer-events:none;transition:opacity .25s, transform .25s;z-index:90;box-shadow:0 8px 22px rgba(40,80,95,.3)}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+.hidden{display:none !important}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- ============ START ============ -->
+  <section id="startScreen">
+    <div class="logo">みのがしくん<small>WATCHING THE CHAT</small></div>
+    <div class="start-row">
+      <button id="pipBtn" class="btn">PiP ウィンドウ</button>
+      <button id="startBtn" class="btn primary">開始する</button>
+    </div>
+    <p class="hint">
+      「開始する」で共有する画面（ゲームのウィンドウ）を選びます。<br>
+      ※画面共有・PiPの都合上、<b>https のページ（GitHub Pages 等）を Chrome 系ブラウザ</b>で開いてください。
+    </p>
+  </section>
+
+  <!-- ============ REGISTRATION ============ -->
+  <section id="regScreen" class="hidden">
+    <div class="reg-grid">
+      <div class="preview-pane np">
+        <h2>プレビュー — 名前の所をクリックして登録</h2>
+        <canvas id="previewCanvas"></canvas>
+        <p class="sub">名前のあたりをクリックすると、一番近い白文字を読み取って確認します。<br>はい→リストに追加。終わったら右の「始める」へ。</p>
+      </div>
+      <aside class="side np">
+        <h2>登録プレイヤー</h2>
+        <div id="playerList"><div class="empty-note">まだ誰も登録されていません</div></div>
+        <div id="ocrStatus">OCR待機中…</div>
+        <button id="goBtn" class="btn primary" style="margin-top:4px">始める</button>
+        <button id="regBackBtn" class="btn ghost">やめる</button>
+      </aside>
+    </div>
+  </section>
+
+  <!-- ============ RUN ============ -->
+  <section id="runScreen" class="hidden">
+    <div class="topbar np">
+      <span class="ttl">みのがしくん</span>
+      <span class="spacer"></span>
+      <button id="runPipBtn" class="btn ghost">PiP表示</button>
+      <button id="stopBtn" class="btn ghost">停止</button>
+    </div>
+
+    <div class="status-line np-in" id="statusLine">準備中…</div>
+
+    <details class="cfg np">
+      <summary>調整</summary>
+      <div class="cfg-body">
+        <div class="cfg-row">
+          <label>取得間隔 <span class="val" id="vInterval">7.0秒</span></label>
+          <input type="range" id="cInterval" min="3" max="15" step="0.5" value="7">
+        </div>
+        <div class="cfg-row">
+          <label>新規チャット判定の感度 <span class="val" id="vChat">0.110</span></label>
+          <input type="range" id="cChat" min="0.04" max="0.25" step="0.005" value="0.11">
+          <span style="font-size:.72rem;color:var(--ink-soft)">小さいほど少しの違いでも新規に。大きいほど鈍感に。</span>
+        </div>
+        <div class="cfg-row">
+          <label>名前の一致しきい値 <span class="val" id="vName">0.090</span></label>
+          <input type="range" id="cName" min="0.04" max="0.18" step="0.005" value="0.09">
+          <span style="font-size:.72rem;color:var(--ink-soft)">小さいほど厳しめ。誤リンクするなら下げる。</span>
+        </div>
+        <div class="cfg-row">
+          <label>文字の連結幅(検出) <span class="val" id="vDilate">14px</span></label>
+          <input type="range" id="cDilate" min="6" max="26" step="1" value="14">
+        </div>
+        <label class="cfg-check"><input type="checkbox" id="cUseOcr"> 名前OCRも併用する（重い・画像一致で取れない時用）</label>
+      </div>
+    </details>
+
+    <div id="chatContainer">
+      <div class="feed-empty">チャットを待っています…<br>誰かのコメントが変わると、ここに上から積まれていきます。</div>
+    </div>
+
+    <details class="dbg np">
+      <summary>検出ビュー（確認用）</summary>
+      <div class="dbg-body">
+        <canvas id="debugCanvas"></canvas>
+        <div class="dbg-legend">
+          <span class="lg-chat">チャット行</span>
+          <span class="lg-name">名前行</span>
+          <span style="color:var(--ink-soft)">緑＋青のペア＝カードとして採用</span>
+        </div>
+      </div>
+    </details>
+  </section>
+
+</div>
+
+<video id="video" autoplay muted playsinline class="hidden"></video>
+<div id="toast"></div>
+
+<script>
+//===APP===
+/* ===================================================================
+   みのがしくん  —  画面共有チャット記録ツール
+   - 7秒ごとに共有画面をキャプチャ
+   - 白文字の「チャット行＋名前行」カードを検出して綺麗に切り出し
+   - 名前は白部分だけOCR / 画像シグネチャでプレイヤーへリンク
+   - 直近のチャット画像と比較し、明らかに違えば新規として上に追加
+   =================================================================== */
+
+const el = id => document.getElementById(id);
+
+/* ---- 調整可能パラメータ ---- */
+const CFG = {
+  INTERVAL: 7000,      // 取得間隔(ms)
+  WHITE_MIN: 168,      // 白文字とみなす各チャンネル最小値
+  WHITE_SPREAD: 46,    // 各チャンネルの最大-最小(色付き=絵文字を除外)
+  DILATE_X: 14,        // 横方向の膨張(1行に文字をまとめる)
+  MIN_LINE_W: 14,
+  MIN_LINE_H: 9,
+  MAX_LINE_H: 58,      // これより高い塊は2行重なり等とみなしスキップ
+  FILL_LO: 0.04,       // 元マスクの塗り率の下限(疎すぎるノイズ除外)
+  FILL_HI: 0.86,       // 上限(ベタ塗りUI除外)
+  PAIR_CENTER_TOL: 24, // チャット中央と名前中央のズレ許容(px)
+  PAIR_GAP_MAX: 1.5,   // チャット下端〜名前上端の間隔(名前高さの倍率)
+  CROP_PAD: 4,
+  GRID_W: 64, GRID_H: 16,
+  NAME_SIG_DIFF: 0.09, // 名前一致のしきい値
+  CHAT_DIFF: 0.11,     // チャット新規判定のしきい値
+};
+
+/* ---- 状態 ---- */
+const S = {
+  stream:null,
+  video: el('video'),
+  players: [],          // {name, nameSig, nameImg, lastChatSig, present}
+  running:false,
+  busy:false,
+  regActive:false,
+  pending:null,         // 登録確認中の {crop, sig}
+  ocrWorker:null,
+  ocrInit:false,
+  useOcr:false,
+  capCanvas:null,
+  timer:null,
+  timeTimer:null,
+  pipWindow:null,
+  chatBox:null,          // chatContainer のDOM参照（PiPへ移動しても有効）
+  lastInfo:{cards:0, matched:0, added:0, at:'-'},
+};
+
+/* ============================ 画像ユーティリティ ============================ */
+
+function captureFrame(){
+  const w = S.video.videoWidth, h = S.video.videoHeight;
+  if(!w || !h) return null;
+  if(!S.capCanvas) S.capCanvas = document.createElement('canvas');
+  if(S.capCanvas.width!==w) S.capCanvas.width=w;
+  if(S.capCanvas.height!==h) S.capCanvas.height=h;
+  const ctx = S.capCanvas.getContext('2d', {willReadFrequently:true});
+  ctx.drawImage(S.video, 0, 0);
+  return {canvas:S.capCanvas, img:ctx.getImageData(0,0,w,h), w, h};
+}
+
+function whiteMaskArr(img, w, h){
+  const d = img.data, m = new Uint8Array(w*h);
+  for(let i=0,p=0;i<d.length;i+=4,p++){
+    const r=d[i], g=d[i+1], b=d[i+2];
+    const mx = r>g?(r>b?r:b):(g>b?g:b);
+    const mn = r<g?(r<b?r:b):(g<b?g:b);
+    if(mn>=CFG.WHITE_MIN && (mx-mn)<=CFG.WHITE_SPREAD) m[p]=1;
+  }
+  return m;
+}
+
+function dilateXArr(m, w, h, r){
+  const out = new Uint8Array(w*h);
+  const pre = new Int32Array(w+1);
+  for(let y=0;y<h;y++){
+    const row=y*w;
+    pre[0]=0;
+    for(let x=0;x<w;x++) pre[x+1]=pre[x]+m[row+x];
+    for(let x=0;x<w;x++){
+      const lo = x-r<0?0:x-r;
+      const hi = x+r>w-1?w-1:x+r;
+      if(pre[hi+1]-pre[lo] > 0) out[row+x]=1;
+    }
+  }
+  return out;
+}
+
+// 連結成分 → bbox一覧（4近傍, スタック式）
+function components(d, w, h){
+  const lab = new Int32Array(w*h);
+  const stack = new Int32Array(w*h);
+  const boxes = [];
+  let cur=0;
+  for(let i=0;i<d.length;i++){
+    if(d[i] && !lab[i]){
+      cur++;
+      let sp=0; stack[sp++]=i; lab[i]=cur;
+      let minx=1e9,miny=1e9,maxx=-1,maxy=-1;
+      while(sp>0){
+        const idx=stack[--sp];
+        const x=idx%w, y=(idx/w)|0;
+        if(x<minx)minx=x; if(x>maxx)maxx=x;
+        if(y<miny)miny=y; if(y>maxy)maxy=y;
+        if(x>0){const n=idx-1; if(d[n]&&!lab[n]){lab[n]=cur;stack[sp++]=n;}}
+        if(x<w-1){const n=idx+1; if(d[n]&&!lab[n]){lab[n]=cur;stack[sp++]=n;}}
+        if(y>0){const n=idx-w; if(d[n]&&!lab[n]){lab[n]=cur;stack[sp++]=n;}}
+        if(y<h-1){const n=idx+w; if(d[n]&&!lab[n]){lab[n]=cur;stack[sp++]=n;}}
+      }
+      boxes.push({x:minx,y:miny,w:maxx-minx+1,h:maxy-miny+1});
+    }
+  }
+  return boxes;
+}
+
+// 元マスク内の塗り率（テキストらしさ判定用）
+function fillRatio(m, w, box){
+  let c=0;
+  for(let y=box.y;y<box.y+box.h;y++){
+    const row=y*w;
+    for(let x=box.x;x<box.x+box.w;x++) c+=m[row+x];
+  }
+  return c/(box.w*box.h);
+}
+
+// 共有画面から「文字行」のbbox群を抽出
+function findLines(img, w, h){
+  const m = whiteMaskArr(img, w, h);
+  const d = dilateXArr(m, w, h, CFG.DILATE_X);
+  const boxes = components(d, w, h);
+  const out=[];
+  for(const b of boxes){
+    if(b.w<CFG.MIN_LINE_W || b.h<CFG.MIN_LINE_H || b.h>CFG.MAX_LINE_H) continue;
+    if(b.w < b.h*0.55) continue;            // 縦長ノイズ除外
+    const fr = fillRatio(m, w, b);
+    if(fr<CFG.FILL_LO || fr>CFG.FILL_HI) continue;
+    out.push(b);
+  }
+  return out;
+}
+
+// チャット行(上)＋名前行(下) のペアを作る。残りは名前のみカード。
+function pairCards(lines){
+  const ls = lines.slice().sort((a,b)=>a.y-b.y);
+  const used = new Array(ls.length).fill(false);
+  const cards = [];
+  for(let i=0;i<ls.length;i++){
+    if(used[i]) continue;
+    const chat = ls[i];
+    const cC = chat.x + chat.w/2;
+    let bj=-1, bgap=1e9;
+    for(let j=0;j<ls.length;j++){
+      if(j===i||used[j]) continue;
+      const name = ls[j];
+      if(name.y <= chat.y) continue;                 // 名前は下
+      const gap = name.y - (chat.y+chat.h);
+      if(gap < -3) continue;                          // 縦に重なり過ぎ
+      if(gap > name.h*CFG.PAIR_GAP_MAX) continue;     // 離れ過ぎ(別カード)
+      const nC = name.x + name.w/2;
+      if(Math.abs(nC-cC) > CFG.PAIR_CENTER_TOL) continue; // 中央が揃ってない
+      if(gap < bgap){ bgap=gap; bj=j; }
+    }
+    if(bj>=0){
+      used[i]=true; used[bj]=true;
+      cards.push({chat, name:ls[bj]});
+    }
+  }
+  for(let i=0;i<ls.length;i++) if(!used[i]) cards.push({chat:null, name:ls[i]});
+  return cards;
+}
+
+function cropCanvas(src, box, pad){
+  pad = pad||0;
+  const x = Math.max(0, box.x - pad);
+  const y = Math.max(0, box.y - pad);
+  const w = Math.min(src.width - x, box.w + pad*2);
+  const h = Math.min(src.height - y, box.h + pad*2);
+  const c = document.createElement('canvas');
+  c.width=w; c.height=h;
+  c.getContext('2d').drawImage(src, x, y, w, h, 0, 0, w, h);
+  return c;
+}
+
+// 白だけ抽出して内容にタイトに切り抜いた canvas(白文字on黒)。無ければ null
+function maskCanvas(src){
+  const w=src.width, h=src.height;
+  const ctx=src.getContext('2d', {willReadFrequently:true});
+  const d=ctx.getImageData(0,0,w,h).data;
+  const mask=new Uint8Array(w*h);
+  let minx=1e9,miny=1e9,maxx=-1,maxy=-1;
+  const MIN=CFG.WHITE_MIN-26, SP=CFG.WHITE_SPREAD+12; // グリフ取りこぼし防止に少し緩く
+  for(let i=0,p=0;i<d.length;i+=4,p++){
+    const r=d[i],g=d[i+1],b=d[i+2];
+    const mx = r>g?(r>b?r:b):(g>b?g:b);
+    const mn = r<g?(r<b?r:b):(g<b?g:b);
+    if(mn>=MIN && (mx-mn)<=SP){
+      mask[p]=1;
+      const x=p%w,y=(p/w)|0;
+      if(x<minx)minx=x;if(x>maxx)maxx=x;if(y<miny)miny=y;if(y>maxy)maxy=y;
+    }
+  }
+  if(maxx<0) return null;
+  const cw=maxx-minx+1, ch=maxy-miny+1;
+  const out=document.createElement('canvas'); out.width=cw; out.height=ch;
+  const octx=out.getContext('2d');
+  const oimg=octx.createImageData(cw,ch);
+  const od=oimg.data;
+  for(let y=0;y<ch;y++)for(let x=0;x<cw;x++){
+    const v = mask[(y+miny)*w+(x+minx)] ? 255 : 0;
+    const dp=(y*cw+x)*4;
+    od[dp]=v; od[dp+1]=v; od[dp+2]=v; od[dp+3]=255;
+  }
+  octx.putImageData(oimg,0,0);
+  return out;
+}
+
+// 64x16のカバレッジ・シグネチャ（位置/サイズ正規化済み）
+function signature(src){
+  const m = maskCanvas(src);
+  if(!m) return null;
+  const GW=CFG.GRID_W, GH=CFG.GRID_H;
+  const t=document.createElement('canvas'); t.width=GW; t.height=GH;
+  const tc=t.getContext('2d', {willReadFrequently:true});
+  tc.imageSmoothingEnabled=true;
+  tc.clearRect(0,0,GW,GH);
+  tc.drawImage(m, 0,0,m.width,m.height, 0,0,GW,GH);
+  const id=tc.getImageData(0,0,GW,GH).data;
+  const sig=new Float32Array(GW*GH);
+  for(let i=0,p=0;i<id.length;i+=4,p++) sig[p]=id[i]/255;
+  return sig;
+}
+
+function sigDiff(a,b){
+  if(!a||!b) return 1;
+  let s=0;
+  for(let i=0;i<a.length;i++){ const d=a[i]-b[i]; s+= d<0?-d:d; }
+  return s/a.length;
+}
+
+// OCR向け：白だけ→反転して黒文字on白＋拡大
+function whitenForOCR(src){
+  const m = maskCanvas(src);
+  if(!m) return src;
+  const md = m.getContext('2d',{willReadFrequently:true}).getImageData(0,0,m.width,m.height);
+  const inv = document.createElement('canvas'); inv.width=m.width; inv.height=m.height;
+  const ic = inv.getContext('2d');
+  const od = ic.createImageData(m.width,m.height);
+  for(let i=0;i<md.data.length;i+=4){
+    const v = md.data[i] ? 0 : 255;
+    od.data[i]=od.data[i+1]=od.data[i+2]=v; od.data[i+3]=255;
+  }
+  ic.putImageData(od,0,0);
+  const scale=2, pad=8;
+  const c=document.createElement('canvas');
+  c.width=m.width*scale+pad*2; c.height=m.height*scale+pad*2;
+  const cc=c.getContext('2d');
+  cc.fillStyle='#fff'; cc.fillRect(0,0,c.width,c.height);
+  cc.imageSmoothingEnabled=true;
+  cc.drawImage(inv, 0,0,m.width,m.height, pad,pad, m.width*scale, m.height*scale);
+  return c;
+}
+
+async function ocr(canvas){
+  if(!S.ocrWorker) return '';
+  try{
+    const { data:{ text } } = await S.ocrWorker.recognize(canvas);
+    return (text||'').replace(/\s+/g,'').trim();
+  }catch(e){ console.warn('ocr', e); return ''; }
+}
+
+function lev(a,b){
+  a=a||''; b=b||'';
+  const m=a.length, n=b.length;
+  if(!m) return n; if(!n) return m;
+  const dp=new Array(n+1);
+  for(let j=0;j<=n;j++) dp[j]=j;
+  for(let i=1;i<=m;i++){
+    let prev=dp[0]; dp[0]=i;
+    for(let j=1;j<=n;j++){
+      const tmp=dp[j];
+      dp[j]=Math.min(dp[j]+1, dp[j-1]+1, prev+(a[i-1]===b[j-1]?0:1));
+      prev=tmp;
+    }
+  }
+  return dp[n];
+}
+
+/* 名前cropをプレイヤーへ。画像シグネチャ優先、必要ならOCR編集距離フォールバック */
+async function matchPlayer(nameCrop){
+  const sig = signature(nameCrop);
+  if(!sig) return null;
+  let best=null, bd=1e9;
+  for(const p of S.players){
+    const d = sigDiff(sig, p.nameSig);
+    if(d<bd){ bd=d; best=p; }
+  }
+  if(best && bd <= CFG.NAME_SIG_DIFF) return best;
+
+  if(S.useOcr && S.ocrWorker){
+    const t = await ocr(whitenForOCR(nameCrop));
+    if(t){
+      let bp=null, bdist=1e9;
+      for(const p of S.players){
+        const dn = lev(t, p.name) / Math.max(t.length, p.name.length, 1);
+        if(dn<bdist){ bdist=dn; bp=p; }
+      }
+      if(bp && bdist <= 0.34) return bp;
+    }
+  }
+  return null;
+}
+
+/* ============================ 登録フロー ============================ */
+
+let pctx=null;
+function startPreviewLoop(){
+  const cv = el('previewCanvas');
+  pctx = cv.getContext('2d');
+  const loop = ()=>{
+    if(!S.regActive) return;
+    const w=S.video.videoWidth, h=S.video.videoHeight;
+    if(w){
+      if(cv.width!==w) cv.width=w;
+      if(cv.height!==h) cv.height=h;
+      pctx.drawImage(S.video,0,0);
+    }
+    requestAnimationFrame(loop);
+  };
+  loop();
+}
+
+async function onPreviewClick(e){
+  const cap = captureFrame();
+  if(!cap){ toast('まだ映像がありません'); return; }
+  const cv = el('previewCanvas');
+  const rect = cv.getBoundingClientRect();
+  const px = (e.clientX - rect.left) * (cv.width / rect.width);
+  const py = (e.clientY - rect.top)  * (cv.height / rect.height);
+
+  const lines = findLines(cap.img, cap.w, cap.h);
+  let best=null, bd=1e9;
+  for(const l of lines){
+    const dx = Math.max(l.x - px, 0, px - (l.x + l.w));
+    const dy = Math.max(l.y - py, 0, py - (l.y + l.h));
+    const d = dx*dx + dy*dy;
+    if(d<bd){ bd=d; best=l; }
+  }
+  if(!best){ toast('近くに白文字が見つかりませんでした'); return; }
+
+  const crop = cropCanvas(cap.canvas, best, CFG.CROP_PAD);
+  const sig = signature(crop);
+  let text='';
+  if(S.ocrWorker) text = await ocr(whitenForOCR(crop));
+  openNameDialog(crop, text, sig);
+}
+
+function openNameDialog(crop, text, sig){
+  S.pending = {crop, sig};
+  let bg = el('nameModalBg');
+  if(!bg){
+    bg = document.createElement('div');
+    bg.id='nameModalBg'; bg.className='modal-bg';
+    bg.innerHTML = `
+      <div class="modal np">
+        <h3>この名前ですか？</h3>
+        <div class="crop-box"><img id="nameCropImg" alt=""></div>
+        <input id="nameInput" type="text" placeholder="名前">
+        <div class="modal-row">
+          <button id="nameNo" class="btn ghost">いいえ</button>
+          <button id="nameYes" class="btn primary">はい</button>
+        </div>
+      </div>`;
+    document.body.appendChild(bg);
+    el('nameYes').addEventListener('click', confirmName);
+    el('nameNo').addEventListener('click', closeNameDialog);
+    el('nameInput').addEventListener('keydown', ev=>{ if(ev.key==='Enter') confirmName(); });
+  }
+  el('nameCropImg').src = crop.toDataURL();
+  el('nameInput').value = text || '';
+  bg.classList.remove('hidden');
+  setTimeout(()=>el('nameInput').focus(), 30);
+}
+function closeNameDialog(){ const b=el('nameModalBg'); if(b) b.classList.add('hidden'); S.pending=null; }
+
+function confirmName(){
+  const name = el('nameInput').value.trim();
+  if(!name){ toast('名前を入力してください'); return; }
+  if(!S.pending){ closeNameDialog(); return; }
+  addPlayer(name, S.pending.sig, S.pending.crop.toDataURL());
+  closeNameDialog();
+}
+
+function addPlayer(name, sig, imgURL){
+  S.players.push({ name, nameSig:sig, nameImg:imgURL, lastChatSig:null, present:false });
+  renderPlayerList();
+  toast(`「${name}」を登録しました`);
+}
+
+function renderPlayerList(){
+  const box = el('playerList');
+  if(S.players.length===0){ box.innerHTML = '<div class="empty-note">まだ誰も登録されていません</div>'; return; }
+  box.innerHTML='';
+  S.players.forEach((p, i)=>{
+    const row = document.createElement('div');
+    row.className='pl-item';
+    row.innerHTML = `<img src="${p.nameImg}" alt=""><span class="nm">${escapeHtml(p.name)}</span><button class="del" title="削除">×</button>`;
+    row.querySelector('.del').addEventListener('click', ()=>{ S.players.splice(i,1); renderPlayerList(); });
+    box.appendChild(row);
+  });
+}
+
+/* ============================ 実行フロー ============================ */
+
+async function processFrame(){
+  if(S.busy || !S.running) return;
+  S.busy = true;
+  try{
+    const cap = captureFrame();
+    if(!cap){ return; }
+    const lines = findLines(cap.img, cap.w, cap.h);
+    const cards = pairCards(lines);
+
+    let matched=0, added=0;
+    const dbgRows=[];
+    S.players.forEach(p=>p.present=false);
+
+    for(const card of cards){
+      const nameCrop = cropCanvas(cap.canvas, card.name, CFG.CROP_PAD);
+      const player = await matchPlayer(nameCrop);
+      dbgRows.push({card, name: player ? player.name : ''});
+      if(!player) continue;
+      matched++;
+      player.present = true;
+
+      if(card.chat){
+        const chatCrop = cropCanvas(cap.canvas, card.chat, CFG.CROP_PAD);
+        const chatSig = signature(chatCrop);
+        if(chatSig){
+          const diff = player.lastChatSig ? sigDiff(chatSig, player.lastChatSig) : Infinity;
+          if(!player.lastChatSig || diff > CFG.CHAT_DIFF){
+            addChat(player, chatCrop.toDataURL());
+            player.lastChatSig = chatSig;
+            added++;
+          }
+        }
+      }
+    }
+
+    S.lastInfo = { cards:cards.length, matched, added, at: timeStr() };
+    drawDebug(cap, dbgRows);
+    updateStatus();
+  }catch(e){
+    console.error('processFrame', e);
+  }finally{
+    S.busy=false;
+  }
+}
+
+function addChat(player, imgURL){
+  const box = S.chatBox;
+  if(!box) return;
+  const empty = box.querySelector('.feed-empty');
+  if(empty) empty.remove();
+  const entry = document.createElement('div');
+  entry.className='chat-entry np-in';
+  entry.dataset.ts = Date.now();
+  entry.innerHTML = `
+    <div class="chat-head">
+      <span class="chat-name">${escapeHtml(player.name)}</span>
+      <span class="chat-time">たった今</span>
+    </div>
+    <div class="chat-img"><img src="${imgURL}" alt=""></div>`;
+  box.insertBefore(entry, box.firstChild);
+  // 増えすぎ防止（任意）
+  while(box.children.length > 120) box.removeChild(box.lastChild);
+}
+
+function updateTimes(){
+  if(!S.chatBox) return;
+  S.chatBox.querySelectorAll('.chat-entry').forEach(e=>{
+    const t = e.querySelector('.chat-time');
+    if(t) t.textContent = agoStr(Number(e.dataset.ts));
+  });
+}
+
+function agoStr(ts){
+  const s = Math.floor((Date.now()-ts)/1000);
+  if(s < 45) return 'たった今';
+  if(s < 3600) return `${Math.floor(s/60)}分前`;
+  if(s < 86400) return `${Math.floor(s/3600)}時間前`;
+  return `${Math.floor(s/86400)}日前`;
+}
+function timeStr(){ const d=new Date(); return d.toLocaleTimeString('ja-JP',{hour12:false}); }
+
+function updateStatus(){
+  const i = S.lastInfo;
+  const present = S.players.filter(p=>p.present).map(p=>p.name);
+  el('statusLine').innerHTML =
+    `最終取得 <b>${i.at}</b> ／ 検出カード <b>${i.cards}</b> ／ 一致 <b>${i.matched}</b> ／ 今回の新規 <b>${i.added}</b>` +
+    (present.length ? `<br>在室：${present.map(escapeHtml).join('、')}` : '');
+}
+
+/* デバッグ：縮小フレーム＋検出枠 */
+function drawDebug(cap, rows){
+  const cv = el('debugCanvas');
+  const maxW = 640;
+  const scale = Math.min(1, maxW / cap.w);
+  cv.width = Math.round(cap.w*scale);
+  cv.height = Math.round(cap.h*scale);
+  const ctx = cv.getContext('2d');
+  ctx.drawImage(cap.canvas, 0,0, cv.width, cv.height);
+  ctx.lineWidth = 2;
+  ctx.font = '12px sans-serif';
+  for(const r of rows){
+    if(r.card.chat){
+      const b=r.card.chat;
+      ctx.strokeStyle='#5bd6a0';
+      ctx.strokeRect(b.x*scale, b.y*scale, b.w*scale, b.h*scale);
+    }
+    const n=r.card.name;
+    ctx.strokeStyle='#6cb8e6';
+    ctx.strokeRect(n.x*scale, n.y*scale, n.w*scale, n.h*scale);
+    if(r.name){
+      ctx.fillStyle='rgba(15,24,28,.8)';
+      const tw = ctx.measureText(r.name).width+8;
+      ctx.fillRect(n.x*scale, n.y*scale-15, tw, 14);
+      ctx.fillStyle='#fff';
+      ctx.fillText(r.name, n.x*scale+4, n.y*scale-4);
+    }
+  }
+}
+
+/* ============================ PiP ============================ */
+
+function copyStyles(pip){
+  document.querySelectorAll('style, link[rel="stylesheet"]').forEach(node=>{
+    pip.document.head.appendChild(node.cloneNode(true));
+  });
+}
+
+async function togglePip(){
+  if(S.pipWindow){ S.pipWindow.close(); return; }
+  if(!('documentPictureInPicture' in window)){
+    toast('このブラウザはPiP非対応です（Chrome系で開いてください）');
+    return;
+  }
+  try{
+    const pip = await documentPictureInPicture.requestWindow({ width:380, height:620 });
+    S.pipWindow = pip;
+    copyStyles(pip);
+    pip.document.title = 'みのがしくん';
+    pip.document.body.classList.add('pip-body');
+    pip.document.body.appendChild(S.chatBox);
+    pip.addEventListener('pagehide', ()=>{
+      const back = el('runScreen');
+      // 実行画面のデバッグ枠の前に戻す
+      const dbg = back.querySelector('details.dbg');
+      back.insertBefore(S.chatBox, dbg);
+      S.pipWindow = null;
+    });
+  }catch(e){
+    console.warn('pip', e);
+    toast('PiPを開けませんでした');
+  }
+}
+
+/* ============================ OCR初期化 ============================ */
+
+function setOcr(text, cls){
+  const e = el('ocrStatus');
+  if(!e) return;
+  e.textContent = text;
+  e.className=''; if(cls) e.classList.add(cls);
+}
+async function initOCR(){
+  if(S.ocrWorker || S.ocrInit) return;
+  S.ocrInit = true;
+  if(typeof Tesseract === 'undefined'){ setOcr('OCR読込失敗（手入力でOK）','err'); return; }
+  try{
+    setOcr('OCRエンジン読込中…');
+    S.ocrWorker = await Tesseract.createWorker('jpn+eng', 1);
+    await S.ocrWorker.setParameters({ tessedit_pageseg_mode: '7' });
+    setOcr('OCR準備完了 ✓','ready');
+  }catch(e){
+    console.warn('initOCR', e);
+    setOcr('OCR読込失敗（手入力でOK）','err');
+  }
+}
+
+/* ============================ 画面遷移・開始/停止 ============================ */
+
+async function startShare(){
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia){
+    toast('この環境では画面共有が使えません（httpsのChrome系で開いてください）');
+    return;
+  }
+  try{
+    S.stream = await navigator.mediaDevices.getDisplayMedia({ video:true, audio:false });
+  }catch(e){
+    return; // ユーザーがキャンセル
+  }
+  S.video.srcObject = S.stream;
+  S.stream.getVideoTracks()[0].addEventListener('ended', stopAll);
+  await new Promise(res=>{
+    if(S.video.videoWidth) return res();
+    S.video.addEventListener('loadedmetadata', res, {once:true});
+  });
+  // 登録画面へ
+  el('startScreen').classList.add('hidden');
+  el('regScreen').classList.remove('hidden');
+  S.regActive = true;
+  startPreviewLoop();
+  initOCR();
+}
+
+function goRun(){
+  if(S.players.length===0){
+    if(!confirm('プレイヤーが0人です。このまま始めますか？（誰のチャットも表示されません）')) return;
+  }
+  S.regActive=false;
+  el('regScreen').classList.add('hidden');
+  el('runScreen').classList.remove('hidden');
+  S.running=true;
+  syncCfg();
+  el('statusLine').textContent='取得を開始しました…';
+  processFrame();
+  S.timer = setInterval(processFrame, CFG.INTERVAL);
+  S.timeTimer = setInterval(updateTimes, 15000);
+}
+
+function stopAll(){
+  S.running=false; S.regActive=false;
+  if(S.timer){ clearInterval(S.timer); S.timer=null; }
+  if(S.timeTimer){ clearInterval(S.timeTimer); S.timeTimer=null; }
+  if(S.pipWindow){ try{S.pipWindow.close();}catch(_){} }
+  if(S.stream){ S.stream.getTracks().forEach(t=>t.stop()); S.stream=null; }
+  el('runScreen').classList.add('hidden');
+  el('regScreen').classList.add('hidden');
+  el('startScreen').classList.remove('hidden');
+  toast('停止しました');
+}
+
+/* ============================ 調整スライダー ============================ */
+
+function syncCfg(){
+  CFG.INTERVAL = parseFloat(el('cInterval').value)*1000;
+  CFG.CHAT_DIFF = parseFloat(el('cChat').value);
+  CFG.NAME_SIG_DIFF = parseFloat(el('cName').value);
+  CFG.DILATE_X = parseInt(el('cDilate').value,10);
+  S.useOcr = el('cUseOcr').checked;
+  el('vInterval').textContent = (CFG.INTERVAL/1000).toFixed(1)+'秒';
+  el('vChat').textContent = CFG.CHAT_DIFF.toFixed(3);
+  el('vName').textContent = CFG.NAME_SIG_DIFF.toFixed(3);
+  el('vDilate').textContent = CFG.DILATE_X+'px';
+}
+function wireCfg(){
+  ['cInterval','cChat','cName','cDilate'].forEach(id=>{
+    el(id).addEventListener('input', ()=>{
+      syncCfg();
+      if(id==='cInterval' && S.running){
+        clearInterval(S.timer);
+        S.timer = setInterval(processFrame, CFG.INTERVAL);
+      }
+    });
+  });
+  el('cUseOcr').addEventListener('change', syncCfg);
+}
+
+/* ============================ 小物 ============================ */
+
+let toastT=null;
+function toast(msg){
+  const t = el('toast');
+  t.textContent=msg; t.classList.add('show');
+  clearTimeout(toastT);
+  toastT=setTimeout(()=>t.classList.remove('show'), 2200);
+}
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+/* ============================ 配線 ============================ */
+
+el('startBtn').addEventListener('click', startShare);
+el('pipBtn').addEventListener('click', togglePip);
+el('previewCanvas').addEventListener('click', onPreviewClick);
+el('goBtn').addEventListener('click', goRun);
+el('regBackBtn').addEventListener('click', stopAll);
+el('runPipBtn').addEventListener('click', togglePip);
+el('stopBtn').addEventListener('click', stopAll);
+S.chatBox = el('chatContainer');
+wireCfg();
+syncCfg();
+</script>
+</body>
+</html>
