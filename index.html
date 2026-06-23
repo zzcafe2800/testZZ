@@ -28,7 +28,7 @@ body{
   -webkit-font-smoothing:antialiased;
   overflow-x:hidden;
 }
-.wrap{max-width:980px;margin:0 auto;padding:22px 16px 60px;min-height:100%}
+.wrap{max-width:1080px;margin:0 auto;padding:22px 16px 60px;min-height:100%}
 
 /* ---- neumorphic primitives ---- */
 .np{
@@ -64,9 +64,9 @@ body{
 .hint{font-size:.8rem;color:var(--ink-soft);max-width:430px;line-height:1.7}
 
 /* ---- registration ---- */
-.reg-grid{display:grid;grid-template-columns:1fr 270px;gap:18px;align-items:start}
+.reg-grid{display:grid;grid-template-columns:1fr 230px;gap:16px;align-items:start}
 @media(max-width:760px){.reg-grid{grid-template-columns:1fr}}
-.preview-pane{padding:14px}
+.preview-pane{padding:10px}
 .preview-pane h2{margin:2px 4px 10px;font-size:.95rem;color:var(--ink-soft);font-weight:700}
 #previewCanvas{width:100%;height:auto;border-radius:12px;display:block;cursor:crosshair;background:#11181c;touch-action:none;user-select:none;-webkit-user-select:none}
 .preview-pane .sub{margin:9px 4px 2px;font-size:.76rem;color:var(--ink-soft);line-height:1.6}
@@ -126,7 +126,7 @@ details.cfg>summary::before{content:"⚙ ";opacity:.7}
 .cp-head-row1{display:flex;align-items:center;gap:10px}
 .cp-title{font-weight:800;font-size:1.12rem;color:var(--water-deep);letter-spacing:.04em}
 .cp-clock{margin-left:auto;font-weight:800;font-size:1.12rem;color:var(--ink);font-variant-numeric:tabular-nums}
-.cp-icons{display:flex;gap:8px;margin-top:11px}
+.cp-icons{display:flex;gap:8px;margin-top:11px;justify-content:flex-end}
 .cp-ic{width:38px;height:34px;border:none;border-radius:11px;background:var(--panel);cursor:pointer;
   display:flex;align-items:center;justify-content:center;font-size:1rem;color:var(--water-deep);
   box-shadow:4px 4px 9px var(--lo), -4px -4px 9px var(--hi)}
@@ -147,8 +147,9 @@ details.cfg>summary::before{content:"⚙ ";opacity:.7}
   background:rgba(255,255,255,.5);white-space:nowrap;transition:background .15s}
 .cp-chip.active{background:#fff;box-shadow:0 2px 8px rgba(40,80,95,.15)}
 
-.cp-log{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;padding:6px 12px 12px;display:flex;flex-direction:column;gap:9px;
-  scrollbar-width:thin}
+.cp-log{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;padding:8px 10px 10px;display:flex;flex-direction:column;gap:9px;
+  scrollbar-width:thin;margin:0 10px 8px;border:2px solid var(--mode-color,transparent);border-radius:13px;
+  background:var(--mode-tint,transparent);transition:border-color .2s, background .2s}
 .cp-log::-webkit-scrollbar{width:7px}
 .cp-log::-webkit-scrollbar-thumb{background:#c2d5dd;border-radius:4px}
 .cp-log.everyone{gap:7px}
@@ -159,7 +160,7 @@ details.cfg>summary::before{content:"⚙ ";opacity:.7}
 @keyframes pop{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
 .ce-head{display:flex;align-items:baseline;gap:9px}
 .ce-name{font-weight:800;font-size:calc(.92rem*var(--ce-scale));color:var(--ce-color,var(--water-deep))}
-.ce-time{font-size:calc(.7rem*var(--ce-scale));color:var(--ink-soft);margin-left:auto;white-space:nowrap;font-variant-numeric:tabular-nums}
+.ce-time{font-size:calc(.7rem*var(--ce-scale));color:var(--ink-soft);white-space:nowrap;font-variant-numeric:tabular-nums}
 .ce-msg{margin-top:calc(6px*var(--ce-scale))}
 .ce-msg img{display:block;max-width:100%;height:auto;max-height:calc(46px*var(--ce-scale));image-rendering:auto}
 .feed-empty{padding:26px;text-align:center;color:var(--ink-soft);font-size:.85rem;line-height:1.8}
@@ -229,9 +230,12 @@ details.dbg>summary::before{content:"🔍 ";opacity:.8}
 .nm-chip{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;
   border-radius:6px;background:var(--water);color:#fff;font-size:.72rem;font-weight:800;flex:none}
 
-/* preview legend */
-.pv-legend{display:flex;gap:14px;flex-wrap:wrap;font-size:.72rem;color:var(--ink-soft);margin:9px 4px 0}
-.pv-legend span::before{content:"■ "}
+/* preview legend (bottom-right overlay) */
+.pv-legend-ov{position:absolute;right:10px;bottom:10px;z-index:4;pointer-events:none;
+  display:flex;flex-direction:column;gap:3px;align-items:flex-end;
+  background:rgba(15,24,28,.5);border-radius:9px;padding:7px 10px;backdrop-filter:blur(2px)}
+.pv-legend-ov span{font-size:.7rem;color:#cfe0e8;font-weight:700;white-space:nowrap}
+.pv-legend-ov span::before{content:"■ "}
 .pl-chat::before{color:#5bd6a0}
 .pl-name::before{color:#6cb8e6}
 .pl-rej::before{color:#d39a5b}
@@ -257,16 +261,25 @@ details.dbg>summary::before{content:"🔍 ";opacity:.8}
 .cmp-none{color:#6b8893;font-size:.74rem}
 .cmp-arrow{color:var(--ink-soft);font-weight:800;font-size:1.1rem;padding:0 2px}
 
-/* preview toolbar / zoom / pause */
-.pv-toolbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:0 2px 10px}
-.pv-tb-zoom{display:flex;align-items:center;gap:8px;margin-left:auto}
-.zbtn{width:34px;height:34px;border:none;border-radius:11px;font-size:1.1rem;font-weight:800;color:var(--water-deep);
-  background:var(--panel);cursor:pointer;box-shadow:4px 4px 9px var(--lo), -4px -4px 9px var(--hi)}
-.zbtn:active{box-shadow:inset 3px 3px 7px var(--lo), inset -3px -3px 7px var(--hi)}
-#zoomLabel{font-weight:800;color:var(--ink-soft);font-size:.84rem;min-width:42px;text-align:center}
-.pv-canvas-wrap{position:relative}
-.paused-tag{position:absolute;top:10px;left:10px;background:var(--warn);color:#fff;font-weight:800;font-size:.8rem;
-  padding:5px 12px;border-radius:10px;box-shadow:0 4px 12px rgba(0,0,0,.2)}
+/* preview overlay controls */
+.pv-canvas-wrap{position:relative;line-height:0}
+.zbtn{width:34px;height:34px;border:none;border-radius:11px;font-size:1.05rem;font-weight:800;color:var(--water-deep);
+  background:rgba(238,245,248,.9);cursor:pointer;box-shadow:0 3px 9px rgba(0,0,0,.25)}
+.zbtn:active{transform:translateY(1px)}
+.pv-zoom-top{position:absolute;top:10px;left:50%;transform:translateX(-50%);z-index:4;
+  display:flex;align-items:center;gap:7px;background:rgba(15,24,28,.42);padding:6px 9px;border-radius:13px;backdrop-filter:blur(2px)}
+#zoomLabel{font-weight:800;color:#eef6fa;font-size:.82rem;min-width:40px;text-align:center}
+.pv-pause{position:absolute;bottom:12px;left:50%;transform:translateX(-50%);z-index:4;
+  width:52px;height:52px;border:none;border-radius:50%;cursor:pointer;font-size:1.15rem;font-weight:800;color:#fff;
+  background:linear-gradient(135deg,var(--water),var(--water-deep));box-shadow:0 5px 16px rgba(0,0,0,.35);
+  display:flex;align-items:center;justify-content:center}
+.pv-pause:active{transform:translateX(-50%) translateY(1px)}
+/* intro overlay (fade + instructions) */
+.pv-intro{position:absolute;inset:0;z-index:7;display:flex;align-items:center;justify-content:center;
+  background:rgba(15,28,34,.62);backdrop-filter:blur(2px);border-radius:12px;padding:20px}
+.pv-intro-card{max-width:420px;text-align:center;line-height:1}
+.pv-intro-card p{color:#fff;font-size:1.02rem;font-weight:700;line-height:1.8;margin:0 0 18px}
+.pv-intro-card p b{color:#bfe4ff}
 
 .hidden{display:none !important}
 </style>
@@ -292,36 +305,31 @@ details.dbg>summary::before{content:"🔍 ";opacity:.8}
   <section id="regScreen" class="hidden">
     <div class="reg-grid">
       <div class="preview-pane np">
-        <h2>プレビュー — 名前の所をクリックして登録</h2>
-        <div class="pv-toolbar">
-          <button id="pauseBtn" class="btn ghost">一時停止</button>
-          <div class="pv-tb-zoom">
+        <div class="pv-canvas-wrap">
+          <canvas id="previewCanvas"></canvas>
+          <div class="pv-zoom-top">
             <button id="zoomOutBtn" class="zbtn" title="縮小">－</button>
             <span id="zoomLabel">×1.0</span>
             <button id="zoomInBtn" class="zbtn" title="拡大">＋</button>
             <button id="zoomResetBtn" class="zbtn" title="リセット">⟲</button>
           </div>
-        </div>
-        <div class="pv-canvas-wrap">
-          <canvas id="previewCanvas"></canvas>
-          <span id="pausedTag" class="paused-tag hidden">一時停止中</span>
-        </div>
-        <p class="sub">名前の所をクリックで登録。ホイールでカーソル位置にズーム／ドラッグで移動／「一時停止」で画面を止めてクリックしやすく。終わったら右の「始める」へ。</p>
-        <div class="pv-legend">
-          <span class="pl-chat">チャット行（切り取り）</span>
-          <span class="pl-name">名前行（切り取り）</span>
-          <span class="pl-rej">不採用候補</span>
+          <button id="pauseBtn" class="pv-pause" title="再生/一時停止">▶</button>
+          <div class="pv-legend-ov">
+            <span class="pl-chat">チャット行</span>
+            <span class="pl-name">名前行</span>
+            <span class="pl-rej">不採用候補</span>
+          </div>
+          <div class="pv-intro" id="pvIntro">
+            <div class="pv-intro-card">
+              <p>記録したいプレイヤーを登録します。<br>コメントの下にある<b>名前</b>をクリックしてください。</p>
+              <button id="pvIntroClose" class="btn primary">はじめる</button>
+            </div>
+          </div>
         </div>
       </div>
       <aside class="side np">
         <h2>登録プレイヤー</h2>
         <div id="playerList"><div class="empty-note">まだ誰も登録されていません</div></div>
-        <div class="manual-add">
-          <input id="manualName" type="text" placeholder="名前を手入力">
-          <button id="manualAdd" class="btn ghost">追加</button>
-        </div>
-        <p class="manual-hint">手入力した名前は、実行中に「名前OCR併用」をオンにすると照合されます（一度認識できれば以降は画像で自動照合）。</p>
-        <div id="ocrStatus">OCR待機中…</div>
         <button id="goBtn" class="btn primary" style="margin-top:4px">始める</button>
         <button id="regBackBtn" class="btn ghost">やめる</button>
       </aside>
@@ -333,6 +341,7 @@ details.dbg>summary::before{content:"🔍 ";opacity:.8}
     <div class="topbar np">
       <span class="ttl">みのがしくん <span class="ver-tag" style="font-size:.66em;opacity:.7"></span></span>
       <span class="spacer"></span>
+      <button id="backRegBtn" class="btn ghost">登録に戻る</button>
       <button id="runPipBtn" class="btn ghost">PiP表示</button>
       <button id="stopBtn" class="btn ghost">停止</button>
     </div>
@@ -392,7 +401,7 @@ details.dbg>summary::before{content:"🔍 ";opacity:.8}
         </div>
       </div>
       <div class="cp-tabs">
-        <button class="cp-tab active" id="tabAll">すべて</button>
+        <button class="cp-tab active" id="tabAll">全員</button>
         <button class="cp-arrow" id="tabPrev" title="前へ">◄</button>
         <div class="cp-chips" id="cpChips"></div>
         <button class="cp-arrow" id="tabNext" title="次へ">►</button>
@@ -407,10 +416,7 @@ details.dbg>summary::before{content:"🔍 ";opacity:.8}
       <div class="cp-overlay hidden" id="playersPanel">
         <div class="cp-ov-head"><span>登録プレイヤー</span><button class="cp-ic" id="playersClose">×</button></div>
         <div id="playerListPip"></div>
-        <div class="manual-add">
-          <input id="manualNamePip" type="text" placeholder="名前を手入力で追加">
-          <button id="manualAddPip" class="btn ghost">追加</button>
-        </div>
+        <p class="manual-hint" style="margin:0">追加は「登録に戻る」から画面の名前をクリックして行います。</p>
       </div>
     </div>
 
@@ -477,7 +483,7 @@ const CFG = {
 };
 
 /* ---- バージョン（新コードごとに +0.1）---- */
-const VERSION = '0.5';
+const VERSION = '0.6';
 
 /* ---- 状態 ---- */
 const S = {
@@ -605,7 +611,7 @@ function detectRaw(img, w, h, P){
   const boxes = components(d, w, h);
   let lines=[], rejected=[];
   for(const b of boxes){
-    let ok = !(b.w<P.MIN_LINE_W || b.h<P.MIN_LINE_H || b.h>P.MAX_LINE_H || b.w < b.h*0.55);
+    let ok = !(b.w<Math.min(P.MIN_LINE_W,9) || b.h<P.MIN_LINE_H || b.h>P.MAX_LINE_H || b.w < b.h*0.4);
     if(ok){ const fr = fillRatio(m, w, b); ok = !(fr<CFG.FILL_LO || fr>CFG.FILL_HI); }
     (ok?lines:rejected).push(b);
   }
@@ -965,17 +971,9 @@ function resetView(){
 }
 function togglePause(){
   S.pvPaused = !S.pvPaused;
-  if(S.pvPaused){
-    const vw=S.video.videoWidth, vh=S.video.videoHeight;
-    if(vw){
-      if(!S.pvFrozen) S.pvFrozen = document.createElement('canvas');
-      S.pvFrozen.width=vw; S.pvFrozen.height=vh;
-      S.pvFrozen.getContext('2d').drawImage(S.video,0,0);
-    }
-  }
+  if(S.pvPaused) freezePreview();
   const btn = el('pauseBtn');
-  if(btn) btn.textContent = S.pvPaused ? '再開' : '一時停止';
-  const tag = el('pausedTag'); if(tag) tag.classList.toggle('hidden', !S.pvPaused);
+  if(btn) btn.textContent = S.pvPaused ? '▶' : '❚❚';
 }
 
 // プレビューのポインタ操作（クリック＝名前選択 / ドラッグ＝移動 / ホイール＝ズーム）
@@ -1013,25 +1011,67 @@ function onPvWheel(e){
   pvAnchor(t, t.cpx, t.cpy);
 }
 
-// 名前選択：フルフレーム（凍結 or ライブ）から検出して切り取り
+// クリック選択用：短い名前も拾えるよう、幅・縦横比のフィルタを緩める
+function detectForClick(img, w, h){
+  const m = whiteMaskArr(img, w, h);
+  const d = dilateXArr(m, w, h, CFG.DILATE_X);
+  const boxes = components(d, w, h);
+  const out=[];
+  for(const b of boxes){
+    if(b.w < 8 || b.h < CFG.MIN_LINE_H || b.h > CFG.MAX_LINE_H) continue; // 幅ゆるめ・縦横比フィルタ無し
+    const fr = fillRatio(m, w, b);
+    if(fr<CFG.FILL_LO || fr>CFG.FILL_HI) continue;
+    out.push(b);
+  }
+  return out;
+}
+
+// 名前選択：クリックした「その行」を名前にする（近いものではなく、押した位置の行）
 async function selectNameAt(nat){
   const cap = getActiveFrame();
   if(!cap){ toast('まだ映像がありません'); return; }
-  const lines = findLines(cap.img, cap.w, cap.h);
-  let best=null, bd=1e9;
-  for(const l of lines){
-    const dx = Math.max(l.x - nat.x, 0, nat.x - (l.x + l.w));
-    const dy = Math.max(l.y - nat.y, 0, nat.y - (l.y + l.h));
-    const d = dx*dx + dy*dy;
-    if(d<bd){ bd=d; best=l; }
+  const cx = nat.x, cy = nat.y;
+  const lines = detectForClick(cap.img, cap.w, cap.h);
+  let best = null;
+
+  // 1) クリックしたyと同じ行（縦の帯にcyが入る行）を優先
+  const rows = lines.filter(l => cy >= l.y && cy <= l.y + l.h);
+  if(rows.length){
+    let near=null, nd=1e9;
+    for(const l of rows){
+      if(cx >= l.x && cx <= l.x + l.w){ best = l; break; }   // xも内側ならそれ
+      const dx = Math.min(Math.abs(cx-l.x), Math.abs(cx-(l.x+l.w)));
+      if(dx < nd){ nd = dx; near = l; }
+    }
+    if(!best) best = near;
   }
-  if(!best){ toast('近くに白文字が見つかりませんでした'); return; }
+  // 2) 同じ行が無ければ、一番近い行
+  if(!best){
+    let bd=1e9;
+    for(const l of lines){
+      const dx = Math.max(l.x - cx, 0, cx - (l.x + l.w));
+      const dy = Math.max(l.y - cy, 0, cy - (l.y + l.h));
+      const d = dx*dx + dy*dy;
+      if(d<bd){ bd=d; best=l; }
+    }
+  }
+  if(!best){ toast('白文字が見つかりませんでした'); return; }
   const crop = cropCanvas(cap.canvas, best, CFG.CROP_PAD);
   const sig = signature(crop);
   let text='';
   if(S.ocrWorker) text = await ocrName(whitenForOCR(crop));
   openNameDialog(crop, text, sig);
 }
+
+// プレビューの現フレームを凍結
+function freezePreview(){
+  const vw=S.video.videoWidth, vh=S.video.videoHeight;
+  if(!vw) return;
+  if(!S.pvFrozen) S.pvFrozen = document.createElement('canvas');
+  S.pvFrozen.width=vw; S.pvFrozen.height=vh;
+  S.pvFrozen.getContext('2d').drawImage(S.video,0,0);
+}
+function showIntro(){ const i=el('pvIntro'); if(i) i.classList.remove('hidden'); }
 
 function openNameDialog(crop, text, sig){
   S.pending = {crop, sig};
@@ -1070,6 +1110,9 @@ function confirmName(){
 }
 
 const NAME_COLORS = ['#e0608a','#5bb86a','#d98b3a','#c9a227','#6a8ed6','#9a6fd0','#3aa6a6','#d05a5a','#7bb33a','#c265b0','#5aa0c9','#cf7a45'];
+// リアルタイム=ティール / 一覧=パープル（今どっちか分かるよう色を分ける）
+const MODE_COLOR = { realtime:'#2f9aa6', everyone:'#8a6fd0' };
+function hexA(hex, a){ const n=parseInt(hex.slice(1),16); return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${a})`; }
 function pickColor(){
   // まだ使われていない色を優先、無ければランダム
   const used = new Set(S.players.map(p=>p.color));
@@ -1294,10 +1337,17 @@ function renderChat(){
   if(!items.length){
     const msg = S.view.mode==='player' ? 'このプレイヤーのチャットはまだありません' : 'チャットを待っています…';
     log.innerHTML = `<div class="feed-empty">${msg}</div>`;
-    return;
+  } else {
+    log.innerHTML = items.map(entryHTML).join('');
+    log.scrollTop = (S.view.mode==='all' && S.view.allMode==='realtime') ? prevScroll : 0;
   }
-  log.innerHTML = items.map(entryHTML).join('');
-  log.scrollTop = (S.view.mode==='all' && S.view.allMode==='realtime') ? prevScroll : 0;
+
+  // 全体の囲い色（モードが分かるよう薄い色で囲む）
+  let mc;
+  if(S.view.mode==='player'){ const p=S.players.find(x=>x.name===S.view.player); mc = p?p.color:'#5b9cb8'; }
+  else mc = MODE_COLOR[S.view.allMode] || MODE_COLOR.realtime;
+  log.style.setProperty('--mode-color', hexA(mc,.55));
+  log.style.setProperty('--mode-tint', hexA(mc,.07));
 }
 
 /* ---- 上のタブ（すべて＋プレイヤー名チップ） ---- */
@@ -1319,8 +1369,10 @@ function renderTabs(){
   if(modeBtn){
     // 個人ビュー中はモード切替を隠す
     modeBtn.style.visibility = S.view.mode==='all' ? 'visible' : 'hidden';
-    modeBtn.textContent = S.view.allMode==='everyone' ? '👥 全員' : '🎙 リアルタイム';
-    modeBtn.classList.toggle('everyone', S.view.allMode==='everyone');
+    const everyone = S.view.allMode==='everyone';
+    modeBtn.textContent = everyone ? '📋 一覧' : '🎙 リアルタイム';
+    modeBtn.style.background = everyone ? MODE_COLOR.everyone : MODE_COLOR.realtime;
+    modeBtn.style.color = '#fff';
   }
 }
 function setView(mode, player){
@@ -1616,11 +1668,12 @@ async function startShare(){
   el('startScreen').classList.add('hidden');
   el('regScreen').classList.remove('hidden');
   S.regActive = true;
-  S.pvZoom = 1; S.pvCenter = null; S.pvPaused = false; S.pvFrozen = null;
-  const pb = el('pauseBtn'); if(pb) pb.textContent='一時停止';
-  const pt = el('pausedTag'); if(pt) pt.classList.add('hidden');
+  S.pvZoom = 1; S.pvCenter = null; S.pvFrozen = null;
+  S.pvPaused = true; freezePreview();              // 初期は一時停止から
+  const pb = el('pauseBtn'); if(pb) pb.textContent='▶';
   setZoom(1);
   startPreviewLoop();
+  showIntro();                                      // 説明オーバーレイ
   initOCR();
 }
 
@@ -1645,6 +1698,25 @@ function goRun(){
   S.timeTimer = setInterval(updateTimes, 15000);
   if(S.moveTimer) clearInterval(S.moveTimer);
   if(S.detectMove){ pollMoving(); S.moveTimer = setInterval(pollMoving, 3000); }
+}
+
+// 実行画面 → 登録画面へ戻る（共有・登録プレイヤーは保持）
+function backToReg(){
+  S.running=false;
+  if(S.timer){ clearInterval(S.timer); S.timer=null; }
+  if(S.timeTimer){ clearInterval(S.timeTimer); S.timeTimer=null; }
+  if(S.moveTimer){ clearInterval(S.moveTimer); S.moveTimer=null; }
+  S.moving=false; S.moveMarkers=[];
+  if(S.chatBox) S.chatBox.classList.remove('moving');
+  if(S.pipWindow){ try{S.pipWindow.close();}catch(_){} }
+  el('runScreen').classList.add('hidden');
+  el('regScreen').classList.remove('hidden');
+  el('startScreen').classList.add('hidden');
+  S.regActive=true;
+  S.pvPaused=true; freezePreview();
+  const pb=el('pauseBtn'); if(pb) pb.textContent='▶';
+  startPreviewLoop();
+  toast('登録画面に戻りました');
 }
 
 function stopAll(){
@@ -1743,8 +1815,8 @@ el('goBtn').addEventListener('click', goRun);
 el('regBackBtn').addEventListener('click', stopAll);
 el('runPipBtn').addEventListener('click', togglePip);
 el('stopBtn').addEventListener('click', stopAll);
-el('manualAdd').addEventListener('click', addManual);
-el('manualName').addEventListener('keydown', e=>{ if(e.key==='Enter') addManual(); });
+el('backRegBtn').addEventListener('click', backToReg);
+el('pvIntroClose').addEventListener('click', ()=>{ const i=el('pvIntro'); if(i) i.classList.add('hidden'); });
 
 // チャットパネル
 S.chatBox = el('chatPanel');
@@ -1757,8 +1829,6 @@ el('tabAll').addEventListener('click', ()=>setView('all', null));
 el('tabPrev').addEventListener('click', ()=>tabScroll(-1));
 el('tabNext').addEventListener('click', ()=>tabScroll(1));
 el('modeBtn').addEventListener('click', toggleAllMode);
-el('manualAddPip').addEventListener('click', ()=>addManualFrom('manualNamePip'));
-el('manualNamePip').addEventListener('keydown', e=>{ if(e.key==='Enter') addManualFrom('manualNamePip'); });
 renderTabs(); renderChat();
 
 // バージョン表示
