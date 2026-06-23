@@ -260,24 +260,24 @@ details.dbg>summary::before{content:"🔍 ";opacity:.8}
       <summary>調整</summary>
       <div class="cfg-body">
         <div class="cfg-row">
-          <label>取得間隔 <span class="val" id="vInterval">7.0秒</span></label>
-          <input type="range" id="cInterval" min="3" max="15" step="0.5" value="7">
+          <label>取得間隔 <span class="val" id="vInterval">11.5秒</span></label>
+          <input type="range" id="cInterval" min="3" max="15" step="0.5" value="11.5">
         </div>
         <div class="cfg-row">
-          <label>新規チャット判定の感度 <span class="val" id="vChat">0.110</span></label>
-          <input type="range" id="cChat" min="0.04" max="0.25" step="0.005" value="0.11">
+          <label>新規チャット判定の感度 <span class="val" id="vChat">0.195</span></label>
+          <input type="range" id="cChat" min="0.04" max="0.25" step="0.005" value="0.195">
           <span style="font-size:.72rem;color:var(--ink-soft)">小さいほど少しの違いでも新規に。大きいほど鈍感に。</span>
         </div>
         <div class="cfg-row">
-          <label>名前の一致しきい値 <span class="val" id="vName">0.090</span></label>
-          <input type="range" id="cName" min="0.04" max="0.18" step="0.005" value="0.09">
+          <label>名前の一致しきい値 <span class="val" id="vName">0.140</span></label>
+          <input type="range" id="cName" min="0.04" max="0.18" step="0.005" value="0.14">
           <span style="font-size:.72rem;color:var(--ink-soft)">小さいほど厳しめ。誤リンクするなら下げる。</span>
         </div>
         <div class="cfg-row">
-          <label>文字の連結幅(検出) <span class="val" id="vDilate">14px</span></label>
-          <input type="range" id="cDilate" min="6" max="26" step="1" value="14">
+          <label>文字の連結幅(検出) <span class="val" id="vDilate">21px</span></label>
+          <input type="range" id="cDilate" min="6" max="26" step="1" value="21">
         </div>
-        <label class="cfg-check"><input type="checkbox" id="cUseOcr"> 名前OCRも併用する（重い・画像一致で取れない時用）</label>
+        <label class="cfg-check"><input type="checkbox" id="cUseOcr" checked> 名前OCRも併用する（重い・画像一致で取れない時用）</label>
       </div>
     </details>
 
@@ -289,7 +289,7 @@ details.dbg>summary::before{content:"🔍 ";opacity:.8}
     <details class="dbg np" open>
       <summary>比較ビュー（開発用）</summary>
       <div class="dbg-body">
-        <div class="cmp-note">前回の画像と今回の画像を比較した<b>一致度</b>です。<b id="cmpCutoff">89.0</b>% 未満になると「新規」として上のチャットに積みます。</div>
+        <div class="cmp-note">前回の画像と今回の画像を比較した<b>一致度</b>です。<b id="cmpCutoff">80.5</b>% 未満になると「新規」として上のチャットに積みます。</div>
         <div id="compareBox"><div class="cmp-empty">まだチャットを検出していません</div></div>
       </div>
     </details>
@@ -327,10 +327,10 @@ const el = id => document.getElementById(id);
 
 /* ---- 調整可能パラメータ ---- */
 const CFG = {
-  INTERVAL: 7000,      // 取得間隔(ms)
+  INTERVAL: 11500,     // 取得間隔(ms)
   WHITE_MIN: 168,      // 白文字とみなす各チャンネル最小値
   WHITE_SPREAD: 46,    // 各チャンネルの最大-最小(色付き=絵文字を除外)
-  DILATE_X: 14,        // 横方向の膨張(1行に文字をまとめる)
+  DILATE_X: 21,        // 横方向の膨張(1行に文字をまとめる)
   MIN_LINE_W: 14,
   MIN_LINE_H: 9,
   MAX_LINE_H: 58,      // これより高い塊は2行重なり等とみなしスキップ
@@ -340,12 +340,12 @@ const CFG = {
   PAIR_GAP_MAX: 1.5,   // チャット下端〜名前上端の間隔(名前高さの倍率)
   CROP_PAD: 4,
   GRID_W: 64, GRID_H: 16,
-  NAME_SIG_DIFF: 0.09, // 名前一致のしきい値
-  CHAT_DIFF: 0.11,     // チャット新規判定のしきい値
+  NAME_SIG_DIFF: 0.14, // 名前一致のしきい値
+  CHAT_DIFF: 0.195,    // チャット新規判定のしきい値
 };
 
 /* ---- バージョン（新コードごとに +0.1）---- */
-const VERSION = '0.2';
+const VERSION = '0.3';
 
 /* ---- 状態 ---- */
 const S = {
@@ -358,7 +358,7 @@ const S = {
   pending:null,         // 登録確認中の {crop, sig}
   ocrWorker:null,
   ocrInit:false,
-  useOcr:false,
+  useOcr:true,
   capCanvas:null,
   timer:null,
   timeTimer:null,
