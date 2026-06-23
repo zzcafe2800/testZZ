@@ -486,10 +486,11 @@ const CFG = {
   NEW_PCT: 65,         // 一致度がこれ以下→新規（通知音）
   REPLACE_PCT: 70,     // NEW_PCT超〜これ以下→新規にせず前の画像を静かに差し替え
   BIG_LINE_RATIO: 1.45,// 基準行高のこの倍より高い行は日付時刻ブロック等として除外
+  STRETCH_Y: 1.8,      // 検出時だけ縦に引き延ばす倍率（細い名前行を拾いやすく）
 };
 
 /* ---- バージョン（新コードごとに +0.1）---- */
-const VERSION = '0.7';
+const VERSION = '0.8';
 
 /* ---- 状態 ---- */
 const S = {
@@ -546,13 +547,26 @@ function getActiveFrame(){
   return captureFrame();
 }
 
+// この色（鮮やかな赤〜マゼンタの炎マーカー）か？ 名前/チャットにはしない
+function isFlameColor(r,g,b){
+  return r>=150 && g<=110 && (r-g)>=70 && b<=r-15;
+}
 function whiteMaskArr(img, w, h){
   const d = img.data, m = new Uint8Array(w*h);
+  const flame = new Uint8Array(w*h);
+  let hasFlame=false;
   for(let i=0,p=0;i<d.length;i+=4,p++){
     const r=d[i], g=d[i+1], b=d[i+2];
     const mx = r>g?(r>b?r:b):(g>b?g:b);
     const mn = r<g?(r<b?r:b):(g<b?g:b);
     if(mn>=CFG.WHITE_MIN && (mx-mn)<=CFG.WHITE_SPREAD) m[p]=1;
+    if(isFlameColor(r,g,b)){ flame[p]=1; hasFlame=true; }
+  }
+  // 炎マーカーは中央が白い → その白を拾わないよう、炎色を膨張させて白から除外
+  if(hasFlame){
+    const fr = Math.max(3, Math.round(w/150));
+    const df = dilateXArr(dilateYArr(flame, w, h, fr), w, h, fr);
+    for(let p=0;p<m.length;p++){ if(m[p] && df[p]) m[p]=0; }
   }
   return m;
 }
@@ -568,6 +582,21 @@ function dilateXArr(m, w, h, r){
       const lo = x-r<0?0:x-r;
       const hi = x+r>w-1?w-1:x+r;
       if(pre[hi+1]-pre[lo] > 0) out[row+x]=1;
+    }
+  }
+  return out;
+}
+
+function dilateYArr(m, w, h, r){
+  const out = new Uint8Array(w*h);
+  const pre = new Int32Array(h+1);
+  for(let x=0;x<w;x++){
+    pre[0]=0;
+    for(let y=0;y<h;y++) pre[y+1]=pre[y]+m[y*w+x];
+    for(let y=0;y<h;y++){
+      const lo = y-r<0?0:y-r;
+      const hi = y+r>h-1?h-1:y+r;
+      if(pre[hi+1]-pre[lo] > 0) out[y*w+x]=1;
     }
   }
   return out;
@@ -634,6 +663,27 @@ function detectRaw(img, w, h, P){
   return {lines, rejected};
 }
 function findLines(img, w, h){ return detectRaw(img, w, h, CFG).lines; }
+
+// 検出時だけ縦に引き延ばして判定 → bboxは元座標へ戻す（細い名前行対策）
+let _stCanvas=null, _stCtx=null;
+function stretchedImageData(srcCanvas, w, h, SV){
+  const sh = Math.max(1, Math.round(h*SV));
+  if(!_stCanvas){ _stCanvas=document.createElement('canvas'); _stCtx=_stCanvas.getContext('2d',{willReadFrequently:true}); }
+  if(_stCanvas.width!==w) _stCanvas.width=w;
+  if(_stCanvas.height!==sh) _stCanvas.height=sh;
+  _stCtx.drawImage(srcCanvas, 0,0,w,h, 0,0,w,sh);
+  return { img:_stCtx.getImageData(0,0,w,sh), w, h:sh };
+}
+// srcCanvas を縦SV倍にして detectRaw → lines/rejected を元座標へ
+function detectLinesStretched(srcCanvas, w, h, baseP){
+  const SV = CFG.STRETCH_Y;
+  const s = stretchedImageData(srcCanvas, w, h, SV);
+  const bp = baseP || CFG;
+  const P = Object.assign({}, bp, { MAX_LINE_H: bp.MAX_LINE_H * SV });
+  const { lines, rejected } = detectRaw(s.img, s.w, s.h, P);
+  const un = b => ({ x:b.x, y:b.y/SV, w:b.w, h:b.h/SV });
+  return { lines: lines.map(un), rejected: rejected.map(un) };
+}
 
 // チャット行(上)＋名前行(下) のペアを作る。残りは名前のみカード。
 function pairCards(lines, P){
@@ -905,7 +955,7 @@ function previewDetectTick(){
     PAIR_CENTER_TOL: Math.max(4, Math.round(CFG.PAIR_CENTER_TOL*sc)),
     PAIR_GAP_MAX: CFG.PAIR_GAP_MAX,
   };
-  const { lines, rejected } = detectRaw(ds.img, ds.w, ds.h, P);
+  const { lines, rejected } = detectLinesStretched(S._dsc, ds.w, ds.h, P);
   const cards = pairCards(lines, P);
   const inv = 1/sc;
   const map = b => ({ x:b.x*inv, y:b.y*inv, w:b.w*inv, h:b.h*inv });
@@ -1019,16 +1069,18 @@ function onPvWheel(e){
 }
 
 // クリック選択用：短い名前も拾えるよう、幅・縦横比のフィルタを緩める
-function detectForClick(img, w, h){
-  const m = whiteMaskArr(img, w, h);
-  const d = dilateXArr(m, w, h, CFG.DILATE_X);
-  const boxes = components(d, w, h);
+function detectForClick(srcCanvas, w, h){
+  const SV = CFG.STRETCH_Y;
+  const s = stretchedImageData(srcCanvas, w, h, SV);
+  const m = whiteMaskArr(s.img, s.w, s.h);
+  const d = dilateXArr(m, s.w, s.h, CFG.DILATE_X);
+  const boxes = components(d, s.w, s.h);
   const out=[];
   for(const b of boxes){
-    if(b.w < 8 || b.h < CFG.MIN_LINE_H || b.h > CFG.MAX_LINE_H) continue; // 幅ゆるめ・縦横比フィルタ無し
-    const fr = fillRatio(m, w, b);
+    if(b.w < 8 || b.h < CFG.MIN_LINE_H || b.h > CFG.MAX_LINE_H*SV) continue; // 幅ゆるめ・縦横比フィルタ無し
+    const fr = fillRatio(m, s.w, b);
     if(fr<CFG.FILL_LO || fr>CFG.FILL_HI) continue;
-    out.push(b);
+    out.push({ x:b.x, y:b.y/SV, w:b.w, h:b.h/SV });    // 元座標へ
   }
   return out;
 }
@@ -1038,7 +1090,7 @@ async function selectNameAt(nat){
   const cap = getActiveFrame();
   if(!cap){ toast('まだ映像がありません'); return; }
   const cx = nat.x, cy = nat.y;
-  const lines = detectForClick(cap.img, cap.w, cap.h);
+  const lines = detectForClick(cap.canvas, cap.w, cap.h);
   let best = null;
 
   // 1) クリックしたyと同じ行（縦の帯にcyが入る行）を優先
@@ -1185,7 +1237,7 @@ async function processFrame(){
     if(S.moving){ updateStatus(); return; }         // 移動中は切り取り中断
     const cap = captureFrame();
     if(!cap){ return; }
-    const lines = findLines(cap.img, cap.w, cap.h);
+    const lines = detectLinesStretched(cap.canvas, cap.w, cap.h, CFG).lines;
     const cards = pairCards(lines);
 
     let matched=0, added=0;
@@ -1897,7 +1949,7 @@ renderTabs(); renderChat();
 window.addEventListener('resize', ()=>{ if(S.view.mode==='all' && S.view.allMode==='everyone') renderChat(); });
 
 // バージョン表示
-document.querySelectorAll('.ver-tag').forEach(n=>{ n.textContent = 'v'+VERSION; });
+document.querySelectorAll('.ver-tag').forEach(n=>{ n.textContent = 'v'+VERSION+' 伸'; });
 
 wireCfg();
 syncCfg();
