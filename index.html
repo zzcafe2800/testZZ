@@ -113,15 +113,78 @@ details.cfg>summary::before{content:"⚙ ";opacity:.7}
 .cfg-check{display:flex;align-items:center;gap:9px;font-size:.82rem;color:var(--ink-soft);font-weight:700}
 .cfg-check input{width:17px;height:17px;accent-color:var(--water)}
 
-#chatContainer{display:flex;flex-direction:column;gap:12px}
-.chat-entry{padding:12px 14px;border-radius:16px;animation:pop .28s ease}
-@keyframes pop{from{opacity:0;transform:translateY(-7px)}to{opacity:1;transform:none}}
-.chat-head{display:flex;align-items:baseline;gap:10px;margin-bottom:9px}
-.chat-name{font-weight:800;color:var(--water-deep);font-size:.96rem}
-.chat-time{font-size:.72rem;color:var(--ink-soft);margin-left:auto}
-.chat-img{border-radius:9px;overflow:hidden;background:#11181c;display:inline-block;padding:6px 8px}
-.chat-img img{display:block;max-width:100%;height:auto;image-rendering:auto}
+/* ===== chat panel (water-blue) ===== */
+#chatPanel{
+  position:relative;display:flex;flex-direction:column;
+  height:620px;max-height:78vh;
+  background:linear-gradient(180deg,#eef6fa,#e3eef3);
+  border-radius:20px;overflow:hidden;
+  box-shadow:8px 8px 18px var(--lo), -8px -8px 18px var(--hi);
+  --ce-scale:1;
+}
+.cp-head{padding:13px 15px 10px;flex:none}
+.cp-head-row1{display:flex;align-items:center;gap:10px}
+.cp-title{font-weight:800;font-size:1.12rem;color:var(--water-deep);letter-spacing:.04em}
+.cp-clock{margin-left:auto;font-weight:800;font-size:1.12rem;color:var(--ink);font-variant-numeric:tabular-nums}
+.cp-icons{display:flex;gap:8px;margin-top:11px}
+.cp-ic{width:38px;height:34px;border:none;border-radius:11px;background:var(--panel);cursor:pointer;
+  display:flex;align-items:center;justify-content:center;font-size:1rem;color:var(--water-deep);
+  box-shadow:4px 4px 9px var(--lo), -4px -4px 9px var(--hi)}
+.cp-ic:active{box-shadow:inset 3px 3px 7px var(--lo), inset -3px -3px 7px var(--hi)}
+.cp-ic.active{background:linear-gradient(135deg,var(--water),var(--water-deep));color:#fff}
+.cp-ic.muted{color:#a9bcc4}
+.cp-ic svg{width:19px;height:19px}
+
+.cp-tabs{display:flex;align-items:center;gap:6px;padding:0 12px 10px;flex:none}
+.cp-tab{border:none;border-radius:11px;font:inherit;font-weight:800;font-size:.82rem;padding:7px 14px;cursor:pointer;
+  color:var(--water-deep);background:var(--panel);box-shadow:3px 3px 7px var(--lo), -3px -3px 7px var(--hi);white-space:nowrap}
+.cp-tab.active{background:linear-gradient(135deg,var(--water),var(--water-deep));color:#fff}
+.cp-arrow{border:none;background:none;cursor:pointer;color:var(--ink-soft);font-size:.8rem;padding:4px 2px;flex:none}
+.cp-arrow:disabled{opacity:.3;cursor:default}
+.cp-chips{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;flex:1;scroll-behavior:smooth}
+.cp-chips::-webkit-scrollbar{display:none}
+.cp-chip{border:none;border-radius:10px;font:inherit;font-weight:800;font-size:.8rem;padding:6px 12px;cursor:pointer;
+  background:rgba(255,255,255,.5);white-space:nowrap;transition:background .15s}
+.cp-chip.active{background:#fff;box-shadow:0 2px 8px rgba(40,80,95,.15)}
+
+.cp-log{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;padding:6px 12px 12px;display:flex;flex-direction:column;gap:9px;
+  scrollbar-width:thin}
+.cp-log::-webkit-scrollbar{width:7px}
+.cp-log::-webkit-scrollbar-thumb{background:#c2d5dd;border-radius:4px}
+.cp-log.everyone{gap:7px}
+
+/* one chat set */
+.ce{padding:calc(9px*var(--ce-scale)) calc(12px*var(--ce-scale));border-radius:13px;background:rgba(255,255,255,.46);
+  border-left:4px solid var(--ce-color,#8aa);animation:pop .26s ease;position:relative}
+@keyframes pop{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
+.ce-head{display:flex;align-items:baseline;gap:9px}
+.ce-name{font-weight:800;font-size:calc(.92rem*var(--ce-scale));color:var(--ce-color,var(--water-deep))}
+.ce-time{font-size:calc(.7rem*var(--ce-scale));color:var(--ink-soft);margin-left:auto;white-space:nowrap;font-variant-numeric:tabular-nums}
+.ce-msg{margin-top:calc(6px*var(--ce-scale))}
+.ce-msg img{display:block;max-width:100%;height:auto;max-height:calc(46px*var(--ce-scale));image-rendering:auto}
 .feed-empty{padding:26px;text-align:center;color:var(--ink-soft);font-size:.85rem;line-height:1.8}
+
+.cp-foot{flex:none;display:flex;align-items:center;gap:10px;padding:11px 14px;border-top:1px solid rgba(91,156,184,.18)}
+.cp-rt{border:none;border-radius:12px;font:inherit;font-weight:800;font-size:.82rem;padding:9px 16px;cursor:pointer;
+  color:var(--water-deep);background:var(--panel);box-shadow:4px 4px 9px var(--lo), -4px -4px 9px var(--hi)}
+.cp-rt.everyone{background:linear-gradient(135deg,var(--water),var(--water-deep));color:#fff}
+.cp-present{margin-left:auto;font-weight:800;font-size:.82rem;color:var(--water-deep);background:var(--panel);
+  padding:7px 14px;border-radius:11px;box-shadow:inset 3px 3px 7px var(--lo), inset -3px -3px 7px var(--hi);font-variant-numeric:tabular-nums}
+
+/* players overlay */
+.cp-overlay{position:absolute;inset:0;z-index:8;background:rgba(238,246,250,.97);backdrop-filter:blur(3px);
+  display:flex;flex-direction:column;padding:14px;gap:12px}
+.cp-ov-head{display:flex;align-items:center;font-weight:800;color:var(--water-deep)}
+.cp-ov-head button{margin-left:auto;font-size:1.2rem}
+.cp-overlay #playerListPip{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:8px}
+
+/* moving (suspend) */
+.moving-overlay{display:none;position:absolute;left:50%;top:46%;transform:translate(-50%,-50%);z-index:6;
+  background:var(--water-deep);color:#fff;font-weight:800;font-size:1.3rem;letter-spacing:.08em;
+  padding:13px 30px;border-radius:14px;box-shadow:0 8px 22px rgba(40,80,95,.35);animation:pulse 1.3s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:.85}50%{opacity:1}}
+#chatPanel.moving .moving-overlay{display:block}
+#chatPanel.moving .cp-log{opacity:.25;filter:blur(1.4px);transition:opacity .3s, filter .3s}
 
 details.dbg{margin-top:20px;padding:0;overflow:hidden}
 details.dbg>summary{cursor:pointer;list-style:none;padding:13px 16px;font-weight:700;font-size:.85rem;color:var(--ink-soft)}
@@ -135,8 +198,8 @@ details.dbg>summary::before{content:"🔍 ";opacity:.8}
 .lg-name::before{color:#6cb8e6}
 
 /* PiP body */
-.pip-body{margin:0;padding:14px;background:var(--bg);font-family:inherit}
-.pip-body #chatContainer{gap:12px}
+.pip-body{margin:0;padding:0;background:var(--bg);font-family:inherit}
+.pip-body #chatPanel{height:100vh;max-height:100vh;border-radius:0;box-shadow:none}
 
 /* OCR status pill */
 #ocrStatus{font-size:.74rem;color:var(--ink-soft);padding:6px 12px;border-radius:10px;
@@ -173,10 +236,6 @@ details.dbg>summary::before{content:"🔍 ";opacity:.8}
 .pl-name::before{color:#6cb8e6}
 .pl-rej::before{color:#d39a5b}
 
-/* feed label */
-.feed-label{font-weight:800;color:var(--water-deep);font-size:.95rem;margin:2px 4px 10px;display:flex;align-items:baseline;gap:10px}
-.feed-label .feed-sub{font-size:.72rem;font-weight:600;color:var(--ink-soft)}
-
 /* compare (dev) view */
 .cmp-note{font-size:.78rem;color:var(--ink-soft);line-height:1.7;margin-bottom:12px}
 .cmp-note b{color:var(--water-deep)}
@@ -208,15 +267,6 @@ details.dbg>summary::before{content:"🔍 ";opacity:.8}
 .pv-canvas-wrap{position:relative}
 .paused-tag{position:absolute;top:10px;left:10px;background:var(--warn);color:#fff;font-weight:800;font-size:.8rem;
   padding:5px 12px;border-radius:10px;box-shadow:0 4px 12px rgba(0,0,0,.2)}
-
-/* moving (suspend) state */
-#chatContainer{position:relative}
-.moving-overlay{display:none;align-self:center;margin:4px auto 10px;background:var(--water-deep);color:#fff;
-  font-weight:800;font-size:1.15rem;letter-spacing:.06em;padding:11px 26px;border-radius:14px;
-  box-shadow:0 8px 22px rgba(40,80,95,.3);animation:pulse 1.3s ease-in-out infinite}
-@keyframes pulse{0%,100%{opacity:.85}50%{opacity:1}}
-#chatContainer.moving .moving-overlay{display:block}
-#chatContainer.moving .chat-entry{opacity:.22;filter:blur(1.5px);transition:opacity .3s, filter .3s}
 
 .hidden{display:none !important}
 </style>
@@ -321,10 +371,47 @@ details.dbg>summary::before{content:"🔍 ";opacity:.8}
       </div>
     </details>
 
-    <div class="feed-label">チャット <span class="feed-sub">「PiP表示」で別ウィンドウに切り出せます</span></div>
-    <div id="chatContainer">
+    <div id="chatPanel">
       <div class="moving-overlay">⏸ 移動中</div>
-      <div class="feed-empty">チャットを待っています…<br>誰かのコメントが変わると、ここに上から積まれていきます。</div>
+      <div class="cp-head">
+        <div class="cp-head-row1">
+          <span class="cp-title">チャット</span>
+          <span class="cp-clock" id="cpClock">--:--</span>
+        </div>
+        <div class="cp-icons">
+          <button class="cp-ic" id="capPauseBtn" title="画面の動きを一時停止">&#10073;&#10073;</button>
+          <button class="cp-ic" id="playersBtn" title="登録プレイヤー / 追加">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>
+          </button>
+          <button class="cp-ic" id="bellBtn" title="通知音 オン/オフ">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9a6 6 0 0 1 12 0c0 5 2 6 2 6H4s2-1 2-6"/><path d="M10 20a2 2 0 0 0 4 0"/></svg>
+          </button>
+          <button class="cp-ic" id="doorBtn" title="お部屋を変える（全プレイヤー＋ログを削除）">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21V4a1 1 0 0 1 1-1h9a1 1 0 0 1 1 1v17"/><path d="M4 21h16"/><circle cx="11.5" cy="12" r="1" fill="currentColor" stroke="none"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="cp-tabs">
+        <button class="cp-tab active" id="tabAll">すべて</button>
+        <button class="cp-arrow" id="tabPrev" title="前へ">◄</button>
+        <div class="cp-chips" id="cpChips"></div>
+        <button class="cp-arrow" id="tabNext" title="次へ">►</button>
+      </div>
+      <div class="cp-log" id="cpLog">
+        <div class="feed-empty">チャットを待っています…</div>
+      </div>
+      <div class="cp-foot">
+        <button class="cp-rt" id="modeBtn">🎙 リアルタイム</button>
+        <span class="cp-present" id="presentBadge">0/0</span>
+      </div>
+      <div class="cp-overlay hidden" id="playersPanel">
+        <div class="cp-ov-head"><span>登録プレイヤー</span><button class="cp-ic" id="playersClose">×</button></div>
+        <div id="playerListPip"></div>
+        <div class="manual-add">
+          <input id="manualNamePip" type="text" placeholder="名前を手入力で追加">
+          <button id="manualAddPip" class="btn ghost">追加</button>
+        </div>
+      </div>
     </div>
 
     <details class="dbg np" open>
@@ -365,6 +452,8 @@ details.dbg>summary::before{content:"🔍 ";opacity:.8}
    =================================================================== */
 
 const el = id => document.getElementById(id);
+// パネル内要素は PiP へ移動しても引けるよう、パネルノードから探す
+const pq = sel => (S.chatBox ? S.chatBox.querySelector(sel) : document.querySelector(sel));
 
 /* ---- 調整可能パラメータ ---- */
 const CFG = {
@@ -388,7 +477,7 @@ const CFG = {
 };
 
 /* ---- バージョン（新コードごとに +0.1）---- */
-const VERSION = '0.4';
+const VERSION = '0.5';
 
 /* ---- 状態 ---- */
 const S = {
@@ -414,8 +503,12 @@ const S = {
   detectMove:true, moving:false, moveMarkers:[], moveTimer:null, _movingBusy:false,
   // 通知音
   sound:true, audioCtx:null,
+  // チャット表示
+  view:{ mode:'all', player:null, allMode:'realtime' },
+  timeline:[],
+  capturePaused:false,
   pipWindow:null,
-  chatBox:null,          // chatContainer のDOM参照（PiPへ移動しても有効）
+  chatBox:null,          // chatPanel のDOM参照（PiPへ移動しても有効）
   lastInfo:{cards:0, matched:0, added:0, at:'-'},
 };
 
@@ -976,35 +1069,58 @@ function confirmName(){
   closeNameDialog();
 }
 
+const NAME_COLORS = ['#e0608a','#5bb86a','#d98b3a','#c9a227','#6a8ed6','#9a6fd0','#3aa6a6','#d05a5a','#7bb33a','#c265b0','#5aa0c9','#cf7a45'];
+function pickColor(){
+  // まだ使われていない色を優先、無ければランダム
+  const used = new Set(S.players.map(p=>p.color));
+  const free = NAME_COLORS.filter(c=>!used.has(c));
+  const pool = free.length ? free : NAME_COLORS;
+  return pool[Math.floor(Math.random()*pool.length)];
+}
+
 function addPlayer(name, sig, imgURL){
-  S.players.push({ name, nameSig:sig, nameImg:imgURL, lastChatSig:null, present:false });
+  S.players.push({ name, nameSig:sig, nameImg:imgURL, color:pickColor(), lastChatSig:null, lastChatImg:null, present:false });
   renderPlayerList();
+  renderTabs();
+  updatePresent();
   toast(`「${name}」を登録しました`);
 }
 
-// 手動登録（名前だけ入力）
-function addManual(){
-  const inp = el('manualName');
+// 手動登録（名前だけ入力）。inputId を変えて登録/PiPの両方から使える
+function addManualFrom(inputId){
+  const inp = el(inputId) || pq('#'+inputId);
+  if(!inp) return;
   const n = inp.value.trim();
   if(!n){ toast('名前を入力してください'); return; }
   addPlayer(n, null, null);
   inp.value='';
   inp.focus();
 }
+function addManual(){ addManualFrom('manualName'); }
 
 function renderPlayerList(){
-  const box = el('playerList');
-  if(S.players.length===0){ box.innerHTML = '<div class="empty-note">まだ誰も登録されていません</div>'; return; }
-  box.innerHTML='';
-  S.players.forEach((p, i)=>{
-    const row = document.createElement('div');
-    row.className='pl-item';
-    const thumb = p.nameImg
-      ? `<img src="${p.nameImg}" alt="">`
-      : `<span class="nm-chip" title="画像未学習（実行中に認識すると自動学習）">手</span>`;
-    row.innerHTML = `${thumb}<span class="nm">${escapeHtml(p.name)}</span><button class="del" title="削除">×</button>`;
-    row.querySelector('.del').addEventListener('click', ()=>{ S.players.splice(i,1); renderPlayerList(); });
-    box.appendChild(row);
+  const html = S.players.length===0
+    ? '<div class="empty-note">まだ誰も登録されていません</div>'
+    : '';
+  [el('playerList'), pq('#playerListPip')].forEach(box=>{
+    if(!box) return;
+    if(!S.players.length){ box.innerHTML = html; return; }
+    box.innerHTML='';
+    S.players.forEach((p, i)=>{
+      const row = document.createElement('div');
+      row.className='pl-item';
+      const thumb = p.nameImg
+        ? `<img src="${p.nameImg}" alt="">`
+        : `<span class="nm-chip" title="画像未学習（実行中に認識すると自動学習）">手</span>`;
+      row.innerHTML = `${thumb}<span class="nm" style="color:${p.color}">${escapeHtml(p.name)}</span><button class="del" title="削除">×</button>`;
+      row.querySelector('.del').addEventListener('click', ()=>{
+        S.players.splice(i,1);
+        renderPlayerList(); renderTabs(); updatePresent();
+        if(S.view.mode==='player' && !S.players.some(q=>q.name===S.view.player)) setView('all', null);
+        else renderChat();
+      });
+      box.appendChild(row);
+    });
   });
 }
 
@@ -1014,7 +1130,8 @@ async function processFrame(){
   if(S.busy || !S.running) return;
   S.busy = true;
   try{
-    if(S.moving){ updateStatus(); return; }   // 移動中は切り取り中断
+    if(S.capturePaused){ updateStatus(); return; } // 画面の動きを一時停止中
+    if(S.moving){ updateStatus(); return; }         // 移動中は切り取り中断
     const cap = captureFrame();
     if(!cap){ return; }
     const lines = findLines(cap.img, cap.w, cap.h);
@@ -1036,7 +1153,7 @@ async function processFrame(){
         const chatCrop = cropCanvas(cap.canvas, card.chat, CFG.CROP_PAD);
         const chatSig = signature(chatCrop);
         if(chatSig){
-          const curURL = chatCrop.toDataURL();
+          const curURL = chatCrop.toDataURL();          // 比較・開発ビュー用(生)
           const has = !!player.lastChatSig;
           const diff = has ? sigDiff(chatSig, player.lastChatSig) : 1;
           const pct = has ? Math.max(0, Math.min(100, (1-diff)*100)) : null;
@@ -1047,22 +1164,18 @@ async function processFrame(){
           else if(pct <= CFG.REPLACE_PCT) decision = 'replace';
           else decision = 'same';
 
-          // 開発ビュー用：更新前の比較対象(前回)と今回・一致度を記録
-          player.cmp = {
-            prevImg: player.lastChatImg || null,
-            curImg: curURL,
-            pct, decision, at: Date.now()
-          };
+          player.cmp = { prevImg: player.lastChatImg || null, curImg: curURL, pct, decision, at: Date.now() };
 
           if(decision === 'first' || decision === 'new'){
-            addChat(player, curURL);
+            const dispURL = processChatImage(chatCrop);  // 背景透明＋文字色を反転
+            addChat(player, dispURL);
             player.lastChatSig = chatSig;
             player.lastChatImg = curURL;
             added++;
-            if(S.sound) beep();
+            if(decision === 'new' && S.sound) beep();
           } else if(decision === 'replace'){
-            // 新規にせず、前のチャット画像を静かに差し替え
-            replaceChat(player, curURL);
+            const dispURL = processChatImage(chatCrop);
+            replaceChat(player, dispURL);
             player.lastChatSig = chatSig;
             player.lastChatImg = curURL;
           }
@@ -1071,6 +1184,7 @@ async function processFrame(){
     }
 
     S.lastInfo = { cards:cards.length, matched, added, at: timeStr() };
+    updatePresent();
     drawDebug(cap, dbgRows);
     renderCompare();
     updateStatus();
@@ -1081,41 +1195,151 @@ async function processFrame(){
   }
 }
 
-function addChat(player, imgURL){
-  const box = S.chatBox;
-  if(!box) return;
-  const empty = box.querySelector('.feed-empty');
-  if(empty) empty.remove();
-  const entry = document.createElement('div');
-  entry.className='chat-entry np-in';
-  entry.dataset.ts = Date.now();
-  entry.dataset.player = player.name;
-  entry.innerHTML = `
-    <div class="chat-head">
-      <span class="chat-name">${escapeHtml(player.name)}</span>
-      <span class="chat-time">たった今</span>
-    </div>
-    <div class="chat-img"><img src="${imgURL}" alt=""></div>`;
-  // 「移動中」バナーの後ろに入れる
-  const overlay = box.querySelector('.moving-overlay');
-  box.insertBefore(entry, overlay ? overlay.nextSibling : box.firstChild);
-  while(box.children.length > 122) box.removeChild(box.lastChild);
+/* ---- チャット画像の加工：文字以外を透明化＋文字色を背景の真逆に ---- */
+const CHAT_DISP_BG = '#e9f2f6';                 // チャット欄の背景（水色）
+function inverseRGB(hex){
+  const n = parseInt(hex.slice(1),16);
+  return { r:255-((n>>16)&255), g:255-((n>>8)&255), b:255-(n&255) };
 }
-
-// 新規にせず、その人の直近チャット画像を静かに差し替え
-function replaceChat(player, imgURL){
-  const box = S.chatBox;
-  if(!box) return;
-  const entries = box.querySelectorAll('.chat-entry');
-  for(const e of entries){
-    if(e.dataset.player === player.name){
-      const img = e.querySelector('.chat-img img');
-      if(img) img.src = imgURL;
-      return;
+const INK = inverseRGB(CHAT_DISP_BG);            // 真逆色（≒濃色）
+function processChatImage(srcCanvas){
+  const w=srcCanvas.width, h=srcCanvas.height;
+  const ctx=srcCanvas.getContext('2d',{willReadFrequently:true});
+  const d=ctx.getImageData(0,0,w,h).data;
+  const out=document.createElement('canvas'); out.width=w; out.height=h;
+  const octx=out.getContext('2d');
+  const oi=octx.createImageData(w,h);
+  const od=oi.data;
+  const SP=CFG.WHITE_SPREAD+18;
+  for(let i=0;i<d.length;i+=4){
+    const r=d[i],g=d[i+1],b=d[i+2];
+    const mx=r>g?(r>b?r:b):(g>b?g:b), mn=r<g?(r<b?r:b):(g<b?g:b);
+    const bright=r*0.299+g*0.587+b*0.114;
+    // 白っぽい(=文字)だけ残し、明るさをアルファに。背景や色付き絵文字は透明。
+    if((mx-mn)<=SP && bright>120){
+      const a=Math.min(255, Math.max(0, (bright-120)/135*255));
+      od[i]=INK.r; od[i+1]=INK.g; od[i+2]=INK.b; od[i+3]=a;
+    }else{
+      od[i+3]=0;
     }
   }
-  // まだ表示が無ければ普通に追加（保険）
-  addChat(player, imgURL);
+  octx.putImageData(oi,0,0);
+  return out.toDataURL();
+}
+
+/* ---- 時刻表記 ---- */
+function timeAgo(ts){
+  const s = Math.floor((Date.now()-ts)/1000);
+  if(s < 30) return 'たった今';
+  if(s < 60) return '30秒前';
+  if(s < 3600) return `${Math.floor(s/60)}分前`;
+  return new Date(ts).toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit',hour12:false}); // 21:00
+}
+function timeStr(){ const d=new Date(); return d.toLocaleTimeString('ja-JP',{hour12:false}); }
+function clockStr(){ return new Date().toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit',hour12:false}); }
+
+/* ---- データモデル：timeline に1セットずつ ---- */
+let _chatId = 0;
+function addChat(player, dispURL){
+  S.timeline.push({ id:++_chatId, name:player.name, color:player.color, img:dispURL, ts:Date.now() });
+  while(S.timeline.length > 400) S.timeline.shift();
+  renderChat();
+}
+// 新規にせず、その人の直近セットの画像を静かに差し替え
+function replaceChat(player, dispURL){
+  for(let i=S.timeline.length-1;i>=0;i--){
+    if(S.timeline[i].name === player.name){ S.timeline[i].img = dispURL; renderChat(); return; }
+  }
+  addChat(player, dispURL); // まだ無ければ保険で追加
+}
+
+function entryHTML(e){
+  return `<div class="ce" data-id="${e.id}" data-ts="${e.ts}" style="--ce-color:${e.color}">
+    <div class="ce-head"><span class="ce-name">${escapeHtml(e.name)}</span><span class="ce-time">${timeAgo(e.ts)}</span></div>
+    <div class="ce-msg"><img src="${e.img}" alt=""></div>
+  </div>`;
+}
+
+function renderChat(){
+  const log = pq('#cpLog');
+  if(!log) return;
+  const prevScroll = log.scrollTop;
+  log.classList.remove('everyone');
+  let items;
+
+  if(S.view.mode === 'player'){
+    // 個人：その人のログのみ（新しい順）
+    items = S.timeline.filter(e=>e.name===S.view.player).slice().reverse();
+  } else if(S.view.allMode === 'everyone'){
+    // 全員：各人の最新を1セットずつ（登録順）
+    log.classList.add('everyone');
+    items = [];
+    for(const p of S.players){
+      let last=null;
+      for(let i=S.timeline.length-1;i>=0;i--){ if(S.timeline[i].name===p.name){ last=S.timeline[i]; break; } }
+      if(last) items.push(last);
+    }
+    // 数が多いほど全体を縮小して一気に見せる
+    const n=items.length;
+    const scale = n<=4 ? 1 : n<=7 ? .82 : n<=11 ? .66 : n<=16 ? .54 : .44;
+    log.parentElement.style.setProperty('--ce-scale', scale.toFixed(2));
+  } else {
+    // リアルタイム：全員ぶんを新しい順に積む
+    items = S.timeline.slice().reverse();
+  }
+  if(S.view.mode!=='all' || S.view.allMode!=='everyone'){
+    log.parentElement.style.setProperty('--ce-scale', '1');
+  }
+
+  if(!items.length){
+    const msg = S.view.mode==='player' ? 'このプレイヤーのチャットはまだありません' : 'チャットを待っています…';
+    log.innerHTML = `<div class="feed-empty">${msg}</div>`;
+    return;
+  }
+  log.innerHTML = items.map(entryHTML).join('');
+  log.scrollTop = (S.view.mode==='all' && S.view.allMode==='realtime') ? prevScroll : 0;
+}
+
+/* ---- 上のタブ（すべて＋プレイヤー名チップ） ---- */
+function renderTabs(){
+  const chips = pq('#cpChips');
+  if(chips){
+    chips.innerHTML='';
+    for(const p of S.players){
+      const b=document.createElement('button');
+      b.className='cp-chip'+(S.view.mode==='player'&&S.view.player===p.name?' active':'');
+      b.textContent=p.name;
+      b.style.color=p.color;
+      b.addEventListener('click', ()=>setView('player', p.name));
+      chips.appendChild(b);
+    }
+  }
+  const allTab=pq('#tabAll'); if(allTab) allTab.classList.toggle('active', S.view.mode==='all');
+  const modeBtn=pq('#modeBtn');
+  if(modeBtn){
+    // 個人ビュー中はモード切替を隠す
+    modeBtn.style.visibility = S.view.mode==='all' ? 'visible' : 'hidden';
+    modeBtn.textContent = S.view.allMode==='everyone' ? '👥 全員' : '🎙 リアルタイム';
+    modeBtn.classList.toggle('everyone', S.view.allMode==='everyone');
+  }
+}
+function setView(mode, player){
+  S.view.mode = mode;
+  S.view.player = mode==='player' ? player : null;
+  renderTabs();
+  renderChat();
+}
+function toggleAllMode(){
+  if(S.view.mode!=='all') return;
+  S.view.allMode = S.view.allMode==='everyone' ? 'realtime' : 'everyone';
+  renderTabs();
+  renderChat();
+}
+function updatePresent(){
+  const badge = pq('#presentBadge');
+  if(!badge) return;
+  const present = S.players.filter(p=>p.present).length;
+  badge.textContent = `${present}/${S.players.length}`;
 }
 
 // 通知音（短いビープ）
@@ -1135,25 +1359,49 @@ function beep(){
   }catch(e){}
 }
 
+/* ---- パネルのヘッダー操作 ---- */
+function toggleCapturePause(){
+  S.capturePaused = !S.capturePaused;
+  const b = pq('#capPauseBtn');
+  if(b){ b.classList.toggle('active', S.capturePaused); b.innerHTML = S.capturePaused ? '&#9654;' : '&#10073;&#10073;'; b.title = S.capturePaused ? '取り込み再開' : '画面の動きを一時停止'; }
+  updateStatus();
+  if(!S.capturePaused && S.running) processFrame();
+}
+function toggleSound(){
+  S.sound = !S.sound;
+  const cb = el('cSound'); if(cb) cb.checked = S.sound;     // 設定チェックと同期
+  const b = pq('#bellBtn'); if(b) b.classList.toggle('muted', !S.sound);
+  toast(S.sound ? '通知音オン' : '通知音オフ');
+}
+function openPlayers(){ const p=pq('#playersPanel'); if(p){ renderPlayerList(); p.classList.remove('hidden'); } }
+function closePlayers(){ const p=pq('#playersPanel'); if(p) p.classList.add('hidden'); }
+function changeRoom(){
+  if(!confirm('お部屋を変えます。登録プレイヤーとチャットのログを全部消します。よろしいですか？')) return;
+  S.players = [];
+  S.timeline = [];
+  S.view = { mode:'all', player:null, allMode:S.view.allMode };
+  renderPlayerList(); renderTabs(); renderChat(); updatePresent();
+  toast('全プレイヤーとログを削除しました');
+}
+function tabScroll(dir){ const c=pq('#cpChips'); if(c) c.scrollBy({left: dir*120, behavior:'smooth'}); }
+
+
+
 function updateTimes(){
-  if(!S.chatBox) return;
-  S.chatBox.querySelectorAll('.chat-entry').forEach(e=>{
-    const t = e.querySelector('.chat-time');
-    if(t) t.textContent = agoStr(Number(e.dataset.ts));
+  const ck = pq('#cpClock'); if(ck) ck.textContent = clockStr();
+  const log = pq('#cpLog'); if(!log) return;
+  log.querySelectorAll('.ce').forEach(e=>{
+    const t = e.querySelector('.ce-time');
+    if(t) t.textContent = timeAgo(Number(e.dataset.ts));
   });
 }
 
-function agoStr(ts){
-  const s = Math.floor((Date.now()-ts)/1000);
-  if(s < 45) return 'たった今';
-  if(s < 3600) return `${Math.floor(s/60)}分前`;
-  if(s < 86400) return `${Math.floor(s/3600)}時間前`;
-  return `${Math.floor(s/86400)}日前`;
-}
-function timeStr(){ const d=new Date(); return d.toLocaleTimeString('ja-JP',{hour12:false}); }
-
 function updateStatus(){
   const i = S.lastInfo;
+  if(S.capturePaused){
+    el('statusLine').innerHTML = `<b style="color:var(--warn)">⏸ 一時停止中 — 画面の取り込みを止めています</b>`;
+    return;
+  }
   if(S.moving){
     const mk = S.moveMarkers && S.moveMarkers.length ? `（${S.moveMarkers.map(escapeHtml).join('/')} 検出）` : '';
     el('statusLine').innerHTML = `<b style="color:var(--warn)">⏸ 移動中${mk} — 切り取りを中断しています</b>`;
@@ -1385,8 +1633,11 @@ function goRun(){
   el('regScreen').classList.add('hidden');
   el('runScreen').classList.remove('hidden');
   S.running=true;
-  S.moving=false; S.moveMarkers=[];
+  S.moving=false; S.moveMarkers=[]; S.capturePaused=false;
   if(S.chatBox) S.chatBox.classList.remove('moving');
+  const cpb=pq('#capPauseBtn'); if(cpb){ cpb.classList.remove('active'); cpb.innerHTML='&#10073;&#10073;'; }
+  const bb=pq('#bellBtn'); if(bb) bb.classList.toggle('muted', !S.sound);
+  renderTabs(); renderChat(); updatePresent(); updateTimes();
   syncCfg();
   el('statusLine').textContent='取得を開始しました…';
   processFrame();
@@ -1403,8 +1654,9 @@ function stopAll(){
   if(S.pvTimer){ clearInterval(S.pvTimer); S.pvTimer=null; }
   if(S.moveTimer){ clearInterval(S.moveTimer); S.moveTimer=null; }
   S.previewBoxes=null;
-  S.moving=false; S.moveMarkers=[];
+  S.moving=false; S.moveMarkers=[]; S.capturePaused=false;
   if(S.chatBox) S.chatBox.classList.remove('moving');
+  closePlayers();
   S.pvPaused=false; S.pvFrozen=null; S.pvZoom=1; S.pvCenter=null;
   if(S.pipWindow){ try{S.pipWindow.close();}catch(_){} }
   if(S.stream){ S.stream.getTracks().forEach(t=>t.stop()); S.stream=null; }
@@ -1433,6 +1685,7 @@ function syncCfg(){
   el('vDilate').textContent = CFG.DILATE_X+'px';
   const nb=el('cmpNew'); if(nb) nb.textContent=CFG.NEW_PCT;
   const rb=el('cmpRep'); if(rb) rb.textContent=CFG.REPLACE_PCT;
+  const bell=pq('#bellBtn'); if(bell) bell.classList.toggle('muted', !S.sound);
 }
 function wireCfg(){
   ['cInterval','cNew','cRep','cName','cDilate'].forEach(id=>{
@@ -1492,7 +1745,21 @@ el('runPipBtn').addEventListener('click', togglePip);
 el('stopBtn').addEventListener('click', stopAll);
 el('manualAdd').addEventListener('click', addManual);
 el('manualName').addEventListener('keydown', e=>{ if(e.key==='Enter') addManual(); });
-S.chatBox = el('chatContainer');
+
+// チャットパネル
+S.chatBox = el('chatPanel');
+el('capPauseBtn').addEventListener('click', toggleCapturePause);
+el('bellBtn').addEventListener('click', toggleSound);
+el('playersBtn').addEventListener('click', openPlayers);
+el('playersClose').addEventListener('click', closePlayers);
+el('doorBtn').addEventListener('click', changeRoom);
+el('tabAll').addEventListener('click', ()=>setView('all', null));
+el('tabPrev').addEventListener('click', ()=>tabScroll(-1));
+el('tabNext').addEventListener('click', ()=>tabScroll(1));
+el('modeBtn').addEventListener('click', toggleAllMode);
+el('manualAddPip').addEventListener('click', ()=>addManualFrom('manualNamePip'));
+el('manualNamePip').addEventListener('keydown', e=>{ if(e.key==='Enter') addManualFrom('manualNamePip'); });
+renderTabs(); renderChat();
 
 // バージョン表示
 document.querySelectorAll('.ver-tag').forEach(n=>{ n.textContent = 'v'+VERSION; });
