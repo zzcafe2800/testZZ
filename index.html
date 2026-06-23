@@ -68,7 +68,7 @@ body{
 @media(max-width:760px){.reg-grid{grid-template-columns:1fr}}
 .preview-pane{padding:14px}
 .preview-pane h2{margin:2px 4px 10px;font-size:.95rem;color:var(--ink-soft);font-weight:700}
-#previewCanvas{width:100%;height:auto;border-radius:12px;display:block;cursor:crosshair;background:#11181c}
+#previewCanvas{width:100%;height:auto;border-radius:12px;display:block;cursor:crosshair;background:#11181c;touch-action:none;user-select:none;-webkit-user-select:none}
 .preview-pane .sub{margin:9px 4px 2px;font-size:.76rem;color:var(--ink-soft);line-height:1.6}
 .side{padding:16px;display:flex;flex-direction:column;gap:12px}
 .side h2{margin:0;font-size:.95rem;color:var(--ink-soft);font-weight:700}
@@ -188,6 +188,7 @@ details.dbg>summary::before{content:"🔍 ";opacity:.8}
 .cmp-pct{margin-left:auto;font-size:.82rem;font-weight:800;color:var(--ink)}
 .cmp-tag{font-size:.72rem;font-weight:800;padding:3px 10px;border-radius:8px;color:#fff}
 .cmp-tag.new{background:var(--good)}
+.cmp-tag.rep{background:var(--water)}
 .cmp-tag.same{background:#9bb3bd}
 .cmp-imgs{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .cmp-cell{display:flex;flex-direction:column;gap:5px}
@@ -196,6 +197,26 @@ details.dbg>summary::before{content:"🔍 ";opacity:.8}
 .cmp-pic img{display:block;max-width:240px;height:auto}
 .cmp-none{color:#6b8893;font-size:.74rem}
 .cmp-arrow{color:var(--ink-soft);font-weight:800;font-size:1.1rem;padding:0 2px}
+
+/* preview toolbar / zoom / pause */
+.pv-toolbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:0 2px 10px}
+.pv-tb-zoom{display:flex;align-items:center;gap:8px;margin-left:auto}
+.zbtn{width:34px;height:34px;border:none;border-radius:11px;font-size:1.1rem;font-weight:800;color:var(--water-deep);
+  background:var(--panel);cursor:pointer;box-shadow:4px 4px 9px var(--lo), -4px -4px 9px var(--hi)}
+.zbtn:active{box-shadow:inset 3px 3px 7px var(--lo), inset -3px -3px 7px var(--hi)}
+#zoomLabel{font-weight:800;color:var(--ink-soft);font-size:.84rem;min-width:42px;text-align:center}
+.pv-canvas-wrap{position:relative}
+.paused-tag{position:absolute;top:10px;left:10px;background:var(--warn);color:#fff;font-weight:800;font-size:.8rem;
+  padding:5px 12px;border-radius:10px;box-shadow:0 4px 12px rgba(0,0,0,.2)}
+
+/* moving (suspend) state */
+#chatContainer{position:relative}
+.moving-overlay{display:none;align-self:center;margin:4px auto 10px;background:var(--water-deep);color:#fff;
+  font-weight:800;font-size:1.15rem;letter-spacing:.06em;padding:11px 26px;border-radius:14px;
+  box-shadow:0 8px 22px rgba(40,80,95,.3);animation:pulse 1.3s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:.85}50%{opacity:1}}
+#chatContainer.moving .moving-overlay{display:block}
+#chatContainer.moving .chat-entry{opacity:.22;filter:blur(1.5px);transition:opacity .3s, filter .3s}
 
 .hidden{display:none !important}
 </style>
@@ -222,8 +243,20 @@ details.dbg>summary::before{content:"🔍 ";opacity:.8}
     <div class="reg-grid">
       <div class="preview-pane np">
         <h2>プレビュー — 名前の所をクリックして登録</h2>
-        <canvas id="previewCanvas"></canvas>
-        <p class="sub">名前のあたりをクリックすると、一番近い白文字を読み取って確認します。<br>はい→リストに追加。終わったら右の「始める」へ。</p>
+        <div class="pv-toolbar">
+          <button id="pauseBtn" class="btn ghost">一時停止</button>
+          <div class="pv-tb-zoom">
+            <button id="zoomOutBtn" class="zbtn" title="縮小">－</button>
+            <span id="zoomLabel">×1.0</span>
+            <button id="zoomInBtn" class="zbtn" title="拡大">＋</button>
+            <button id="zoomResetBtn" class="zbtn" title="リセット">⟲</button>
+          </div>
+        </div>
+        <div class="pv-canvas-wrap">
+          <canvas id="previewCanvas"></canvas>
+          <span id="pausedTag" class="paused-tag hidden">一時停止中</span>
+        </div>
+        <p class="sub">名前の所をクリックで登録。ホイールでカーソル位置にズーム／ドラッグで移動／「一時停止」で画面を止めてクリックしやすく。終わったら右の「始める」へ。</p>
         <div class="pv-legend">
           <span class="pl-chat">チャット行（切り取り）</span>
           <span class="pl-name">名前行（切り取り）</span>
@@ -264,9 +297,14 @@ details.dbg>summary::before{content:"🔍 ";opacity:.8}
           <input type="range" id="cInterval" min="3" max="15" step="0.5" value="11.5">
         </div>
         <div class="cfg-row">
-          <label>新規チャット判定の感度 <span class="val" id="vChat">0.195</span></label>
-          <input type="range" id="cChat" min="0.04" max="0.25" step="0.005" value="0.195">
-          <span style="font-size:.72rem;color:var(--ink-soft)">小さいほど少しの違いでも新規に。大きいほど鈍感に。</span>
+          <label>新規ライン（一致度%） <span class="val" id="vNew">65%</span></label>
+          <input type="range" id="cNew" min="30" max="95" step="1" value="65">
+          <span style="font-size:.72rem;color:var(--ink-soft)">これ以下で「新規」＋通知音。</span>
+        </div>
+        <div class="cfg-row">
+          <label>差し替えライン（一致度%） <span class="val" id="vRep">70%</span></label>
+          <input type="range" id="cRep" min="30" max="99" step="1" value="70">
+          <span style="font-size:.72rem;color:var(--ink-soft)">新規ライン超〜これ以下なら、新規にせず前の画像を静かに差し替え。</span>
         </div>
         <div class="cfg-row">
           <label>名前の一致しきい値 <span class="val" id="vName">0.140</span></label>
@@ -278,18 +316,21 @@ details.dbg>summary::before{content:"🔍 ";opacity:.8}
           <input type="range" id="cDilate" min="6" max="26" step="1" value="21">
         </div>
         <label class="cfg-check"><input type="checkbox" id="cUseOcr" checked> 名前OCRも併用する（重い・画像一致で取れない時用）</label>
+        <label class="cfg-check"><input type="checkbox" id="cSound" checked> 新規チャットで通知音を鳴らす</label>
+        <label class="cfg-check"><input type="checkbox" id="cMove" checked> 操作中UIを検出したら自動で「移動中」（切り取り中断）</label>
       </div>
     </details>
 
     <div class="feed-label">チャット <span class="feed-sub">「PiP表示」で別ウィンドウに切り出せます</span></div>
     <div id="chatContainer">
+      <div class="moving-overlay">⏸ 移動中</div>
       <div class="feed-empty">チャットを待っています…<br>誰かのコメントが変わると、ここに上から積まれていきます。</div>
     </div>
 
     <details class="dbg np" open>
       <summary>比較ビュー（開発用）</summary>
       <div class="dbg-body">
-        <div class="cmp-note">前回の画像と今回の画像を比較した<b>一致度</b>です。<b id="cmpCutoff">80.5</b>% 未満になると「新規」として上のチャットに積みます。</div>
+        <div class="cmp-note">前回と今回の画像の<b>一致度</b>。<b id="cmpNew">65</b>%以下→「新規」（通知音）／ <b id="cmpRep">70</b>%以下（新規ライン超）→前の画像を静かに差し替え／ それ超→同じ。</div>
         <div id="compareBox"><div class="cmp-empty">まだチャットを検出していません</div></div>
       </div>
     </details>
@@ -341,11 +382,13 @@ const CFG = {
   CROP_PAD: 4,
   GRID_W: 64, GRID_H: 16,
   NAME_SIG_DIFF: 0.14, // 名前一致のしきい値
-  CHAT_DIFF: 0.195,    // チャット新規判定のしきい値
+  NEW_PCT: 65,         // 一致度がこれ以下→新規（通知音）
+  REPLACE_PCT: 70,     // NEW_PCT超〜これ以下→新規にせず前の画像を静かに差し替え
+  BIG_LINE_RATIO: 1.45,// 基準行高のこの倍より高い行は日付時刻ブロック等として除外
 };
 
 /* ---- バージョン（新コードごとに +0.1）---- */
-const VERSION = '0.3';
+const VERSION = '0.4';
 
 /* ---- 状態 ---- */
 const S = {
@@ -365,6 +408,12 @@ const S = {
   pvTimer:null,          // プレビュー検出タイマー
   previewBoxes:null,     // ライブ検出枠
   _dsc:null, _dscCtx:null, // 縮小用キャンバス
+  // プレビューのズーム/一時停止
+  pvZoom:1, pvCenter:null, pvPaused:false, pvFrozen:null, _nW:0, _nH:0,
+  // 移動検知（操作中UI）
+  detectMove:true, moving:false, moveMarkers:[], moveTimer:null, _movingBusy:false,
+  // 通知音
+  sound:true, audioCtx:null,
   pipWindow:null,
   chatBox:null,          // chatContainer のDOM参照（PiPへ移動しても有効）
   lastInfo:{cards:0, matched:0, added:0, at:'-'},
@@ -375,12 +424,20 @@ const S = {
 function captureFrame(){
   const w = S.video.videoWidth, h = S.video.videoHeight;
   if(!w || !h || S.video.readyState < 2) return null;
-  if(!S.capCanvas) S.capCanvas = document.createElement('canvas');
-  if(S.capCanvas.width!==w) S.capCanvas.width=w;
-  if(S.capCanvas.height!==h) S.capCanvas.height=h;
-  const ctx = S.capCanvas.getContext('2d', {willReadFrequently:true});
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const ctx = c.getContext('2d', {willReadFrequently:true});
   ctx.drawImage(S.video, 0, 0);
-  return {canvas:S.capCanvas, img:ctx.getImageData(0,0,w,h), w, h};
+  return {canvas:c, img:ctx.getImageData(0,0,w,h), w, h};
+}
+
+// 一時停止中は凍結フレーム、通常はライブから取得
+function getActiveFrame(){
+  if(S.pvPaused && S.pvFrozen){
+    const c = S.pvFrozen, ctx = c.getContext('2d', {willReadFrequently:true});
+    return {canvas:c, img:ctx.getImageData(0,0,c.width,c.height), w:c.width, h:c.height};
+  }
+  return captureFrame();
 }
 
 function whiteMaskArr(img, w, h){
@@ -453,11 +510,20 @@ function detectRaw(img, w, h, P){
   const m = whiteMaskArr(img, w, h);
   const d = dilateXArr(m, w, h, P.DILATE_X);
   const boxes = components(d, w, h);
-  const lines=[], rejected=[];
+  let lines=[], rejected=[];
   for(const b of boxes){
     let ok = !(b.w<P.MIN_LINE_W || b.h<P.MIN_LINE_H || b.h>P.MAX_LINE_H || b.w < b.h*0.55);
     if(ok){ const fr = fillRatio(m, w, b); ok = !(fr<CFG.FILL_LO || fr>CFG.FILL_HI); }
     (ok?lines:rejected).push(b);
+  }
+  // 日付時刻ブロック等の除外：名前/チャットは同じ高さなので、基準高の1.45倍超は弾く
+  if(lines.length >= 3){
+    const hs = lines.map(l=>l.h).slice().sort((a,b)=>a-b);
+    const refH = hs[Math.floor(hs.length*0.4)];       // やや小さめ＝通常カード側に寄せる
+    const big = refH * CFG.BIG_LINE_RATIO;
+    const keep=[];
+    for(const l of lines){ if(l.h > big) rejected.push(l); else keep.push(l); }
+    lines = keep;
   }
   return {lines, rejected};
 }
@@ -585,12 +651,29 @@ function whitenForOCR(src){
   return c;
 }
 
-async function ocr(canvas){
-  if(!S.ocrWorker) return '';
-  try{
-    const { data:{ text } } = await S.ocrWorker.recognize(canvas);
-    return (text||'').replace(/\s+/g,'').trim();
-  }catch(e){ console.warn('ocr', e); return ''; }
+// OCRは1ワーカーを共有するので直列化する
+let ocrChain = Promise.resolve();
+function ocrQueue(fn){ const run = ocrChain.then(fn, fn); ocrChain = run.catch(()=>{}); return run; }
+
+async function ocrName(canvas){           // 名前：単一行(PSM7)
+  return ocrQueue(async ()=>{
+    if(!S.ocrWorker) return '';
+    try{
+      await S.ocrWorker.setParameters({ tessedit_pageseg_mode:'7' });
+      const { data:{ text } } = await S.ocrWorker.recognize(canvas);
+      return (text||'').replace(/\s+/g,'').trim();
+    }catch(e){ return ''; }
+  });
+}
+async function ocrRegion(canvas){         // UI領域：疎なテキスト(PSM11)
+  return ocrQueue(async ()=>{
+    if(!S.ocrWorker) return '';
+    try{
+      await S.ocrWorker.setParameters({ tessedit_pageseg_mode:'11' });
+      const { data:{ text } } = await S.ocrWorker.recognize(canvas);
+      return (text||'').replace(/\s+/g,'').trim();
+    }catch(e){ return ''; }
+  });
 }
 
 function lev(a,b){
@@ -623,7 +706,7 @@ async function matchPlayer(nameCrop){
   if(best && bd <= CFG.NAME_SIG_DIFF) return best;
 
   if(S.useOcr && S.ocrWorker){
-    const t = await ocr(whitenForOCR(nameCrop));
+    const t = await ocrName(whitenForOCR(nameCrop));
     if(t){
       let bp=null, bdist=1e9;
       for(const p of S.players){
@@ -642,7 +725,7 @@ async function matchPlayer(nameCrop){
   return null;
 }
 
-/* ============================ 登録フロー ============================ */
+/* ============================ 登録フロー（プレビュー：一時停止・ズーム） ============================ */
 
 let pctx=null;
 function startPreviewLoop(){
@@ -650,13 +733,7 @@ function startPreviewLoop(){
   pctx = cv.getContext('2d');
   const loop = ()=>{
     if(!S.regActive) return;
-    const w=S.video.videoWidth, h=S.video.videoHeight;
-    if(w && S.video.readyState>=2){
-      if(cv.width!==w) cv.width=w;
-      if(cv.height!==h) cv.height=h;
-      try{ pctx.drawImage(S.video,0,0); }catch(_){}
-      drawPreviewBoxes(pctx);   // 切り取り箇所をリアルタイム表示
-    }
+    renderPreview();
     requestAnimationFrame(loop);
   };
   loop();
@@ -664,23 +741,54 @@ function startPreviewLoop(){
   S.pvTimer = setInterval(previewDetectTick, 300);
 }
 
-// 共有映像を縮小して ImageData を得る（オーバーレイ検出を軽くする用）
-function downscaleVideo(maxW){
-  const vw=S.video.videoWidth, vh=S.video.videoHeight;
-  if(!vw || S.video.readyState<2) return null;
-  const s = Math.min(1, maxW/vw);
-  const w = Math.max(1, Math.round(vw*s)), h = Math.max(1, Math.round(vh*s));
+// 表示するソース矩形（ズーム/中心から算出、画面内にクランプ）
+function pvSrcRect(nW, nH){
+  if(!S.pvCenter) S.pvCenter = {x:nW/2, y:nH/2};
+  const z = S.pvZoom;
+  const sw = nW/z, sh = nH/z;
+  let sx = S.pvCenter.x - sw/2, sy = S.pvCenter.y - sh/2;
+  sx = Math.max(0, Math.min(nW-sw, sx));
+  sy = Math.max(0, Math.min(nH-sh, sy));
+  S.pvCenter.x = sx + sw/2; S.pvCenter.y = sy + sh/2;
+  return {sx, sy, sw, sh};
+}
+
+function renderPreview(){
+  const cv = el('previewCanvas');
+  const usePaused = S.pvPaused && S.pvFrozen;
+  const src = usePaused ? S.pvFrozen : S.video;
+  const nW = usePaused ? S.pvFrozen.width  : S.video.videoWidth;
+  const nH = usePaused ? S.pvFrozen.height : S.video.videoHeight;
+  if(!nW || (!usePaused && S.video.readyState<2)) return;
+  if(cv.width!==nW) cv.width=nW;
+  if(cv.height!==nH) cv.height=nH;
+  S._nW=nW; S._nH=nH;
+  const r = pvSrcRect(nW, nH);
+  try{ pctx.drawImage(src, r.sx, r.sy, r.sw, r.sh, 0, 0, cv.width, cv.height); }catch(_){}
+  drawPreviewBoxes(pctx, r);
+}
+
+// 縮小して ImageData を得る（任意ソース）
+function downscaleFrom(srcEl, nW, nH, maxW){
+  if(!nW) return null;
+  const s = Math.min(1, maxW/nW);
+  const w = Math.max(1, Math.round(nW*s)), h = Math.max(1, Math.round(nH*s));
   if(!S._dsc){ S._dsc = document.createElement('canvas'); S._dscCtx = S._dsc.getContext('2d',{willReadFrequently:true}); }
   if(S._dsc.width!==w) S._dsc.width=w;
   if(S._dsc.height!==h) S._dsc.height=h;
-  S._dscCtx.drawImage(S.video, 0,0, w,h);
+  S._dscCtx.drawImage(srcEl, 0,0, w,h);
   return { img:S._dscCtx.getImageData(0,0,w,h), w, h, scale:s };
 }
 
 // 縮小フレームで検出 → ネイティブ座標に戻して保持
 function previewDetectTick(){
   if(!S.regActive){ if(S.pvTimer){clearInterval(S.pvTimer);S.pvTimer=null;} return; }
-  const ds = downscaleVideo(900);
+  const usePaused = S.pvPaused && S.pvFrozen;
+  const srcEl = usePaused ? S.pvFrozen : S.video;
+  const nW = usePaused ? S.pvFrozen.width  : S.video.videoWidth;
+  const nH = usePaused ? S.pvFrozen.height : S.video.videoHeight;
+  if(!nW || (!usePaused && S.video.readyState<2)) return;
+  const ds = downscaleFrom(srcEl, nW, nH, 900);
   if(!ds) return;
   const sc = ds.scale;
   const P = {
@@ -702,47 +810,133 @@ function previewDetectTick(){
   };
 }
 
-function drawPreviewBoxes(ctx){
+// ネイティブ座標 → 現在の表示矩形に合わせてキャンバス座標へ
+function drawPreviewBoxes(ctx, src){
   const b = S.previewBoxes;
-  if(!b) return;
-  const cw = ctx.canvas.width;
-  const lw = Math.max(2, Math.round(cw/430));
+  if(!b || !src) return;
+  const cw = ctx.canvas.width, ch = ctx.canvas.height;
+  const tx = o => ({
+    x:(o.x - src.sx)/src.sw*cw,
+    y:(o.y - src.sy)/src.sh*ch,
+    w:o.w/src.sw*cw,
+    h:o.h/src.sh*ch
+  });
+  const lw = Math.max(2, Math.round(cw/430)) * (S.pvZoom>1 ? S.pvZoom*0.5 : 1);
   ctx.lineWidth = lw;
-  // 不採用候補（薄いオレンジ・破線）
   ctx.strokeStyle = 'rgba(211,154,91,.55)';
   ctx.setLineDash([lw*2, lw*2]);
-  for(const r of b.rejected) ctx.strokeRect(r.x, r.y, r.w, r.h);
+  for(const r of b.rejected){ const t=tx(r); ctx.strokeRect(t.x,t.y,t.w,t.h); }
   ctx.setLineDash([]);
-  // 名前（青）
   ctx.strokeStyle = '#6cb8e6';
-  for(const n of b.names) ctx.strokeRect(n.x, n.y, n.w, n.h);
-  // チャット（緑）
+  for(const n of b.names){ const t=tx(n); ctx.strokeRect(t.x,t.y,t.w,t.h); }
   ctx.strokeStyle = '#5bd6a0';
-  for(const c of b.chats) ctx.strokeRect(c.x, c.y, c.w, c.h);
+  for(const c of b.chats){ const t=tx(c); ctx.strokeRect(t.x,t.y,t.w,t.h); }
 }
 
-async function onPreviewClick(e){
-  const cap = captureFrame();
-  if(!cap){ toast('まだ映像がありません'); return; }
+// イベント座標 → ネイティブ座標（＋キャンバスpx）
+function evToNative(e){
   const cv = el('previewCanvas');
   const rect = cv.getBoundingClientRect();
-  const px = (e.clientX - rect.left) * (cv.width / rect.width);
-  const py = (e.clientY - rect.top)  * (cv.height / rect.height);
+  const cpx = (e.clientX - rect.left) * (cv.width / rect.width);
+  const cpy = (e.clientY - rect.top)  * (cv.height / rect.height);
+  const nW = S._nW||cv.width, nH = S._nH||cv.height;
+  const r = pvSrcRect(nW, nH);
+  return { x:r.sx + (cpx/cv.width)*r.sw, y:r.sy + (cpy/cv.height)*r.sh, cpx, cpy };
+}
 
+// 指定ネイティブ点を、指定キャンバスpxの位置に来るよう中心を合わせる（ズーム/パンの基準合わせ）
+function pvAnchor(target, cpx, cpy){
+  const cv = el('previewCanvas');
+  const nW = S._nW||cv.width, nH = S._nH||cv.height;
+  const z = S.pvZoom, sw = nW/z, sh = nH/z;
+  const sx = target.x - (cpx/cv.width)*sw;
+  const sy = target.y - (cpy/cv.height)*sh;
+  S.pvCenter = { x:sx + sw/2, y:sy + sh/2 };
+}
+
+function setZoom(z){
+  S.pvZoom = Math.max(1, Math.min(8, z));
+  const lab = el('zoomLabel'); if(lab) lab.textContent = '×' + S.pvZoom.toFixed(1);
+}
+function btnZoom(factor){
+  const cv = el('previewCanvas');
+  const r = pvSrcRect(S._nW||cv.width, S._nH||cv.height);
+  const target = { x:r.sx + 0.5*r.sw, y:r.sy + 0.5*r.sh };
+  setZoom(S.pvZoom * factor);
+  pvAnchor(target, cv.width/2, cv.height/2);
+}
+function resetView(){
+  S.pvZoom = 1;
+  S.pvCenter = S._nW ? {x:S._nW/2, y:S._nH/2} : null;
+  setZoom(1);
+}
+function togglePause(){
+  S.pvPaused = !S.pvPaused;
+  if(S.pvPaused){
+    const vw=S.video.videoWidth, vh=S.video.videoHeight;
+    if(vw){
+      if(!S.pvFrozen) S.pvFrozen = document.createElement('canvas');
+      S.pvFrozen.width=vw; S.pvFrozen.height=vh;
+      S.pvFrozen.getContext('2d').drawImage(S.video,0,0);
+    }
+  }
+  const btn = el('pauseBtn');
+  if(btn) btn.textContent = S.pvPaused ? '再開' : '一時停止';
+  const tag = el('pausedTag'); if(tag) tag.classList.toggle('hidden', !S.pvPaused);
+}
+
+// プレビューのポインタ操作（クリック＝名前選択 / ドラッグ＝移動 / ホイール＝ズーム）
+let pvDown=null, pvPanning=false;
+function onPvPointerDown(e){
+  if(e.button!==undefined && e.button!==0) return;
+  const cv = el('previewCanvas');
+  pvDown = { n: evToNative(e), x:e.clientX, y:e.clientY };
+  pvPanning = false;
+  try{ cv.setPointerCapture(e.pointerId); }catch(_){}
+}
+function onPvPointerMove(e){
+  if(!pvDown) return;
+  const dx=Math.abs(e.clientX-pvDown.x), dy=Math.abs(e.clientY-pvDown.y);
+  if(!pvPanning && (dx>6||dy>6)) pvPanning=true;
+  if(pvPanning){
+    const cv = el('previewCanvas');
+    const rect = cv.getBoundingClientRect();
+    const cpx = (e.clientX-rect.left)*(cv.width/rect.width);
+    const cpy = (e.clientY-rect.top)*(cv.height/rect.height);
+    pvAnchor(pvDown.n, cpx, cpy);
+  }
+}
+function onPvPointerUp(e){
+  if(!pvDown) return;
+  const wasPan = pvPanning, dn = pvDown;
+  pvDown = null; pvPanning = false;
+  if(!wasPan) selectNameAt(dn.n);
+}
+function onPvWheel(e){
+  e.preventDefault();
+  const t = evToNative(e);
+  const factor = e.deltaY < 0 ? 1.18 : 1/1.18;
+  setZoom(S.pvZoom * factor);
+  pvAnchor(t, t.cpx, t.cpy);
+}
+
+// 名前選択：フルフレーム（凍結 or ライブ）から検出して切り取り
+async function selectNameAt(nat){
+  const cap = getActiveFrame();
+  if(!cap){ toast('まだ映像がありません'); return; }
   const lines = findLines(cap.img, cap.w, cap.h);
   let best=null, bd=1e9;
   for(const l of lines){
-    const dx = Math.max(l.x - px, 0, px - (l.x + l.w));
-    const dy = Math.max(l.y - py, 0, py - (l.y + l.h));
+    const dx = Math.max(l.x - nat.x, 0, nat.x - (l.x + l.w));
+    const dy = Math.max(l.y - nat.y, 0, nat.y - (l.y + l.h));
     const d = dx*dx + dy*dy;
     if(d<bd){ bd=d; best=l; }
   }
   if(!best){ toast('近くに白文字が見つかりませんでした'); return; }
-
   const crop = cropCanvas(cap.canvas, best, CFG.CROP_PAD);
   const sig = signature(crop);
   let text='';
-  if(S.ocrWorker) text = await ocr(whitenForOCR(crop));
+  if(S.ocrWorker) text = await ocrName(whitenForOCR(crop));
   openNameDialog(crop, text, sig);
 }
 
@@ -820,6 +1014,7 @@ async function processFrame(){
   if(S.busy || !S.running) return;
   S.busy = true;
   try{
+    if(S.moving){ updateStatus(); return; }   // 移動中は切り取り中断
     const cap = captureFrame();
     if(!cap){ return; }
     const lines = findLines(cap.img, cap.w, cap.h);
@@ -845,7 +1040,12 @@ async function processFrame(){
           const has = !!player.lastChatSig;
           const diff = has ? sigDiff(chatSig, player.lastChatSig) : 1;
           const pct = has ? Math.max(0, Math.min(100, (1-diff)*100)) : null;
-          const decision = !has ? 'first' : (diff > CFG.CHAT_DIFF ? 'new' : 'same');
+          // 3段階：NEW_PCT以下→新規(音)／NEW_PCT超〜REPLACE_PCT以下→静かに差し替え／それ超→同じ
+          let decision;
+          if(!has) decision = 'first';
+          else if(pct <= CFG.NEW_PCT) decision = 'new';
+          else if(pct <= CFG.REPLACE_PCT) decision = 'replace';
+          else decision = 'same';
 
           // 開発ビュー用：更新前の比較対象(前回)と今回・一致度を記録
           player.cmp = {
@@ -859,6 +1059,12 @@ async function processFrame(){
             player.lastChatSig = chatSig;
             player.lastChatImg = curURL;
             added++;
+            if(S.sound) beep();
+          } else if(decision === 'replace'){
+            // 新規にせず、前のチャット画像を静かに差し替え
+            replaceChat(player, curURL);
+            player.lastChatSig = chatSig;
+            player.lastChatImg = curURL;
           }
         }
       }
@@ -883,15 +1089,50 @@ function addChat(player, imgURL){
   const entry = document.createElement('div');
   entry.className='chat-entry np-in';
   entry.dataset.ts = Date.now();
+  entry.dataset.player = player.name;
   entry.innerHTML = `
     <div class="chat-head">
       <span class="chat-name">${escapeHtml(player.name)}</span>
       <span class="chat-time">たった今</span>
     </div>
     <div class="chat-img"><img src="${imgURL}" alt=""></div>`;
-  box.insertBefore(entry, box.firstChild);
-  // 増えすぎ防止（任意）
-  while(box.children.length > 120) box.removeChild(box.lastChild);
+  // 「移動中」バナーの後ろに入れる
+  const overlay = box.querySelector('.moving-overlay');
+  box.insertBefore(entry, overlay ? overlay.nextSibling : box.firstChild);
+  while(box.children.length > 122) box.removeChild(box.lastChild);
+}
+
+// 新規にせず、その人の直近チャット画像を静かに差し替え
+function replaceChat(player, imgURL){
+  const box = S.chatBox;
+  if(!box) return;
+  const entries = box.querySelectorAll('.chat-entry');
+  for(const e of entries){
+    if(e.dataset.player === player.name){
+      const img = e.querySelector('.chat-img img');
+      if(img) img.src = imgURL;
+      return;
+    }
+  }
+  // まだ表示が無ければ普通に追加（保険）
+  addChat(player, imgURL);
+}
+
+// 通知音（短いビープ）
+function beep(){
+  try{
+    if(!S.audioCtx) S.audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+    if(S.audioCtx.state === 'suspended') S.audioCtx.resume();
+    const ctx = S.audioCtx;
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.type='sine'; o.frequency.value=880;
+    o.connect(g); g.connect(ctx.destination);
+    const t = ctx.currentTime;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.25, t+0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t+0.22);
+    o.start(t); o.stop(t+0.24);
+  }catch(e){}
 }
 
 function updateTimes(){
@@ -913,6 +1154,11 @@ function timeStr(){ const d=new Date(); return d.toLocaleTimeString('ja-JP',{hou
 
 function updateStatus(){
   const i = S.lastInfo;
+  if(S.moving){
+    const mk = S.moveMarkers && S.moveMarkers.length ? `（${S.moveMarkers.map(escapeHtml).join('/')} 検出）` : '';
+    el('statusLine').innerHTML = `<b style="color:var(--warn)">⏸ 移動中${mk} — 切り取りを中断しています</b>`;
+    return;
+  }
   const present = S.players.filter(p=>p.present).map(p=>p.name);
   el('statusLine').innerHTML =
     `最終取得 <b>${i.at}</b> ／ 検出カード <b>${i.cards}</b> ／ 一致 <b>${i.matched}</b> ／ 今回の新規 <b>${i.added}</b>` +
@@ -923,20 +1169,18 @@ function updateStatus(){
 function renderCompare(){
   const box = el('compareBox');
   if(!box) return;
-  const cutoff = (1 - CFG.CHAT_DIFF) * 100;
-  el('cmpCutoff').textContent = cutoff.toFixed(1);
 
   const rows = S.players.filter(p=>p.cmp).sort((a,b)=>b.cmp.at - a.cmp.at);
   if(!rows.length){
     box.innerHTML = '<div class="cmp-empty">まだチャットを検出していません</div>';
     return;
   }
+  const tagName = d => d==='new' ? '新規' : d==='replace' ? '差し替え' : d==='first' ? '初回' : '同じ';
   box.innerHTML = '';
   for(const p of rows){
     const c = p.cmp;
     const pctTxt = c.pct==null ? '—' : c.pct.toFixed(1)+'%';
-    const tag = c.decision==='new' ? '新規' : c.decision==='first' ? '初回' : '同じ';
-    const tagCls = c.decision==='same' ? 'same' : 'new';
+    const tagCls = c.decision==='same' ? 'same' : c.decision==='replace' ? 'rep' : 'new';
     const prev = c.prevImg
       ? `<img src="${c.prevImg}" alt="">`
       : '<span class="cmp-none">なし</span>';
@@ -946,7 +1190,7 @@ function renderCompare(){
       <div class="cmp-head">
         <span class="cmp-name">${escapeHtml(p.name)}</span>
         <span class="cmp-pct">一致度 ${pctTxt}</span>
-        <span class="cmp-tag ${tagCls}">${tag}</span>
+        <span class="cmp-tag ${tagCls}">${tagName(c.decision)}</span>
       </div>
       <div class="cmp-imgs">
         <div class="cmp-cell"><label>前回（比較対象）</label><div class="cmp-pic">${prev}</div></div>
@@ -984,6 +1228,60 @@ function drawDebug(cap, rows){
       ctx.fillStyle='#fff';
       ctx.fillText(r.name, n.x*scale+4, n.y*scale-4);
     }
+  }
+}
+
+/* ============================ 移動検知（操作中UI） ============================ */
+
+// 操作中に出るUIの文字を領域ごとにOCRして探す
+async function checkMovingUI(cap){
+  const regions = [
+    { r:[0, 0,    0.30, 0.12], keys:['id','公開','非公開'] },                          // 左上：公開中/非公開中 ID
+    { r:[0, 0.10, 0.15, 0.85], keys:['タイマー','日課','日記','カメラ','to-do','todo','イマ'] }, // 左：メニュー
+    { r:[0.72, 0.84, 0.28, 0.16], keys:['leave','move','eave','ove'] },                // 右下：leave move
+  ];
+  const found = [];
+  for(const reg of regions){
+    const x=Math.round(reg.r[0]*cap.w), y=Math.round(reg.r[1]*cap.h);
+    const w=Math.round(reg.r[2]*cap.w), h=Math.round(reg.r[3]*cap.h);
+    if(w<6||h<6) continue;
+    let c = cropCanvas(cap.canvas, {x,y,w,h}, 0);
+    // 大きい領域はOCR高速化のため縮小
+    if(c.width > 520){
+      const s=520/c.width, t=document.createElement('canvas');
+      t.width=Math.round(c.width*s); t.height=Math.round(c.height*s);
+      t.getContext('2d').drawImage(c,0,0,t.width,t.height);
+      c=t;
+    }
+    const low = (await ocrRegion(c)).toLowerCase();
+    if(!low) continue;
+    for(const k of reg.keys){ if(low.includes(k.toLowerCase())){ found.push(k); break; } }
+  }
+  return { moving: found.length>0, markers:[...new Set(found)] };
+}
+
+async function pollMoving(){
+  if(!S.running || !S.detectMove){ if(S.moving) setMoving(false, []); return; }
+  if(S._movingBusy) return;
+  S._movingBusy = true;
+  try{
+    const cap = captureFrame();
+    if(!cap) return;
+    const res = await checkMovingUI(cap);
+    setMoving(res.moving, res.markers);
+  }catch(e){ /* noop */ }
+  finally{ S._movingBusy = false; }
+}
+
+function setMoving(moving, markers){
+  const was = S.moving;
+  S.moving = moving;
+  S.moveMarkers = markers || [];
+  if(S.chatBox) S.chatBox.classList.toggle('moving', moving);
+  updateStatus();
+  if(was && !moving){
+    // 解除直後にすぐ取り直し
+    setTimeout(()=>{ if(!S.moving && S.running) processFrame(); }, 200);
   }
 }
 
@@ -1070,6 +1368,10 @@ async function startShare(){
   el('startScreen').classList.add('hidden');
   el('regScreen').classList.remove('hidden');
   S.regActive = true;
+  S.pvZoom = 1; S.pvCenter = null; S.pvPaused = false; S.pvFrozen = null;
+  const pb = el('pauseBtn'); if(pb) pb.textContent='一時停止';
+  const pt = el('pausedTag'); if(pt) pt.classList.add('hidden');
+  setZoom(1);
   startPreviewLoop();
   initOCR();
 }
@@ -1083,11 +1385,15 @@ function goRun(){
   el('regScreen').classList.add('hidden');
   el('runScreen').classList.remove('hidden');
   S.running=true;
+  S.moving=false; S.moveMarkers=[];
+  if(S.chatBox) S.chatBox.classList.remove('moving');
   syncCfg();
   el('statusLine').textContent='取得を開始しました…';
   processFrame();
   S.timer = setInterval(processFrame, CFG.INTERVAL);
   S.timeTimer = setInterval(updateTimes, 15000);
+  if(S.moveTimer) clearInterval(S.moveTimer);
+  if(S.detectMove){ pollMoving(); S.moveTimer = setInterval(pollMoving, 3000); }
 }
 
 function stopAll(){
@@ -1095,7 +1401,11 @@ function stopAll(){
   if(S.timer){ clearInterval(S.timer); S.timer=null; }
   if(S.timeTimer){ clearInterval(S.timeTimer); S.timeTimer=null; }
   if(S.pvTimer){ clearInterval(S.pvTimer); S.pvTimer=null; }
+  if(S.moveTimer){ clearInterval(S.moveTimer); S.moveTimer=null; }
   S.previewBoxes=null;
+  S.moving=false; S.moveMarkers=[];
+  if(S.chatBox) S.chatBox.classList.remove('moving');
+  S.pvPaused=false; S.pvFrozen=null; S.pvZoom=1; S.pvCenter=null;
   if(S.pipWindow){ try{S.pipWindow.close();}catch(_){} }
   if(S.stream){ S.stream.getTracks().forEach(t=>t.stop()); S.stream=null; }
   el('runScreen').classList.add('hidden');
@@ -1108,17 +1418,24 @@ function stopAll(){
 
 function syncCfg(){
   CFG.INTERVAL = parseFloat(el('cInterval').value)*1000;
-  CFG.CHAT_DIFF = parseFloat(el('cChat').value);
+  CFG.NEW_PCT = parseInt(el('cNew').value,10);
+  CFG.REPLACE_PCT = parseInt(el('cRep').value,10);
+  if(CFG.REPLACE_PCT < CFG.NEW_PCT) CFG.REPLACE_PCT = CFG.NEW_PCT; // 差し替え帯は新規ライン以上
   CFG.NAME_SIG_DIFF = parseFloat(el('cName').value);
   CFG.DILATE_X = parseInt(el('cDilate').value,10);
   S.useOcr = el('cUseOcr').checked;
+  S.sound = el('cSound').checked;
+  S.detectMove = el('cMove').checked;
   el('vInterval').textContent = (CFG.INTERVAL/1000).toFixed(1)+'秒';
-  el('vChat').textContent = CFG.CHAT_DIFF.toFixed(3);
+  el('vNew').textContent = CFG.NEW_PCT+'%';
+  el('vRep').textContent = CFG.REPLACE_PCT+'%';
   el('vName').textContent = CFG.NAME_SIG_DIFF.toFixed(3);
   el('vDilate').textContent = CFG.DILATE_X+'px';
+  const nb=el('cmpNew'); if(nb) nb.textContent=CFG.NEW_PCT;
+  const rb=el('cmpRep'); if(rb) rb.textContent=CFG.REPLACE_PCT;
 }
 function wireCfg(){
-  ['cInterval','cChat','cName','cDilate'].forEach(id=>{
+  ['cInterval','cNew','cRep','cName','cDilate'].forEach(id=>{
     el(id).addEventListener('input', ()=>{
       syncCfg();
       if(id==='cInterval' && S.running){
@@ -1128,6 +1445,14 @@ function wireCfg(){
     });
   });
   el('cUseOcr').addEventListener('change', syncCfg);
+  el('cSound').addEventListener('change', syncCfg);
+  el('cMove').addEventListener('change', ()=>{
+    syncCfg();
+    if(S.running){
+      if(S.detectMove){ if(!S.moveTimer){ pollMoving(); S.moveTimer=setInterval(pollMoving,3000); } }
+      else { if(S.moveTimer){ clearInterval(S.moveTimer); S.moveTimer=null; } setMoving(false, []); }
+    }
+  });
 }
 
 /* ============================ 小物 ============================ */
@@ -1147,7 +1472,20 @@ function escapeHtml(s){
 
 el('startBtn').addEventListener('click', startShare);
 el('pipBtn').addEventListener('click', togglePip);
-el('previewCanvas').addEventListener('click', onPreviewClick);
+
+// プレビュー：クリック＝名前選択 / ドラッグ＝移動 / ホイール＝ズーム
+const _pv = el('previewCanvas');
+_pv.addEventListener('pointerdown', onPvPointerDown);
+_pv.addEventListener('pointermove', onPvPointerMove);
+_pv.addEventListener('pointerup', onPvPointerUp);
+_pv.addEventListener('pointercancel', ()=>{ pvDown=null; pvPanning=false; });
+_pv.addEventListener('wheel', onPvWheel, {passive:false});
+
+el('pauseBtn').addEventListener('click', togglePause);
+el('zoomInBtn').addEventListener('click', ()=>btnZoom(1.3));
+el('zoomOutBtn').addEventListener('click', ()=>btnZoom(1/1.3));
+el('zoomResetBtn').addEventListener('click', resetView);
+
 el('goBtn').addEventListener('click', goRun);
 el('regBackBtn').addEventListener('click', stopAll);
 el('runPipBtn').addEventListener('click', togglePip);
