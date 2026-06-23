@@ -173,6 +173,30 @@ details.dbg>summary::before{content:"🔍 ";opacity:.8}
 .pl-name::before{color:#6cb8e6}
 .pl-rej::before{color:#d39a5b}
 
+/* feed label */
+.feed-label{font-weight:800;color:var(--water-deep);font-size:.95rem;margin:2px 4px 10px;display:flex;align-items:baseline;gap:10px}
+.feed-label .feed-sub{font-size:.72rem;font-weight:600;color:var(--ink-soft)}
+
+/* compare (dev) view */
+.cmp-note{font-size:.78rem;color:var(--ink-soft);line-height:1.7;margin-bottom:12px}
+.cmp-note b{color:var(--water-deep)}
+.cmp-empty{font-size:.82rem;color:var(--ink-soft);padding:12px 4px}
+#compareBox{display:flex;flex-direction:column;gap:10px}
+.cmp-row{padding:11px 13px;border-radius:14px}
+.cmp-head{display:flex;align-items:center;gap:10px;margin-bottom:9px}
+.cmp-name{font-weight:800;color:var(--water-deep);font-size:.92rem}
+.cmp-pct{margin-left:auto;font-size:.82rem;font-weight:800;color:var(--ink)}
+.cmp-tag{font-size:.72rem;font-weight:800;padding:3px 10px;border-radius:8px;color:#fff}
+.cmp-tag.new{background:var(--good)}
+.cmp-tag.same{background:#9bb3bd}
+.cmp-imgs{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.cmp-cell{display:flex;flex-direction:column;gap:5px}
+.cmp-cell label{font-size:.68rem;color:var(--ink-soft);font-weight:700}
+.cmp-pic{background:#11181c;border-radius:8px;padding:5px 7px;min-width:60px;min-height:30px;display:flex;align-items:center;justify-content:center}
+.cmp-pic img{display:block;max-width:240px;height:auto}
+.cmp-none{color:#6b8893;font-size:.74rem}
+.cmp-arrow{color:var(--ink-soft);font-weight:800;font-size:1.1rem;padding:0 2px}
+
 .hidden{display:none !important}
 </style>
 </head>
@@ -257,9 +281,18 @@ details.dbg>summary::before{content:"🔍 ";opacity:.8}
       </div>
     </details>
 
+    <div class="feed-label">チャット <span class="feed-sub">「PiP表示」で別ウィンドウに切り出せます</span></div>
     <div id="chatContainer">
       <div class="feed-empty">チャットを待っています…<br>誰かのコメントが変わると、ここに上から積まれていきます。</div>
     </div>
+
+    <details class="dbg np" open>
+      <summary>比較ビュー（開発用）</summary>
+      <div class="dbg-body">
+        <div class="cmp-note">前回の画像と今回の画像を比較した<b>一致度</b>です。<b id="cmpCutoff">89.0</b>% 未満になると「新規」として上のチャットに積みます。</div>
+        <div id="compareBox"><div class="cmp-empty">まだチャットを検出していません</div></div>
+      </div>
+    </details>
 
     <details class="dbg np">
       <summary>検出ビュー（確認用）</summary>
@@ -312,7 +345,7 @@ const CFG = {
 };
 
 /* ---- バージョン（新コードごとに +0.1）---- */
-const VERSION = '0.1';
+const VERSION = '0.2';
 
 /* ---- 状態 ---- */
 const S = {
@@ -808,10 +841,23 @@ async function processFrame(){
         const chatCrop = cropCanvas(cap.canvas, card.chat, CFG.CROP_PAD);
         const chatSig = signature(chatCrop);
         if(chatSig){
-          const diff = player.lastChatSig ? sigDiff(chatSig, player.lastChatSig) : Infinity;
-          if(!player.lastChatSig || diff > CFG.CHAT_DIFF){
-            addChat(player, chatCrop.toDataURL());
+          const curURL = chatCrop.toDataURL();
+          const has = !!player.lastChatSig;
+          const diff = has ? sigDiff(chatSig, player.lastChatSig) : 1;
+          const pct = has ? Math.max(0, Math.min(100, (1-diff)*100)) : null;
+          const decision = !has ? 'first' : (diff > CFG.CHAT_DIFF ? 'new' : 'same');
+
+          // 開発ビュー用：更新前の比較対象(前回)と今回・一致度を記録
+          player.cmp = {
+            prevImg: player.lastChatImg || null,
+            curImg: curURL,
+            pct, decision, at: Date.now()
+          };
+
+          if(decision === 'first' || decision === 'new'){
+            addChat(player, curURL);
             player.lastChatSig = chatSig;
+            player.lastChatImg = curURL;
             added++;
           }
         }
@@ -820,6 +866,7 @@ async function processFrame(){
 
     S.lastInfo = { cards:cards.length, matched, added, at: timeStr() };
     drawDebug(cap, dbgRows);
+    renderCompare();
     updateStatus();
   }catch(e){
     console.error('processFrame', e);
@@ -870,6 +917,44 @@ function updateStatus(){
   el('statusLine').innerHTML =
     `最終取得 <b>${i.at}</b> ／ 検出カード <b>${i.cards}</b> ／ 一致 <b>${i.matched}</b> ／ 今回の新規 <b>${i.added}</b>` +
     (present.length ? `<br>在室：${present.map(escapeHtml).join('、')}` : '');
+}
+
+/* 開発ビュー：各人の「前回(比較対象) vs 今回」＋一致度% */
+function renderCompare(){
+  const box = el('compareBox');
+  if(!box) return;
+  const cutoff = (1 - CFG.CHAT_DIFF) * 100;
+  el('cmpCutoff').textContent = cutoff.toFixed(1);
+
+  const rows = S.players.filter(p=>p.cmp).sort((a,b)=>b.cmp.at - a.cmp.at);
+  if(!rows.length){
+    box.innerHTML = '<div class="cmp-empty">まだチャットを検出していません</div>';
+    return;
+  }
+  box.innerHTML = '';
+  for(const p of rows){
+    const c = p.cmp;
+    const pctTxt = c.pct==null ? '—' : c.pct.toFixed(1)+'%';
+    const tag = c.decision==='new' ? '新規' : c.decision==='first' ? '初回' : '同じ';
+    const tagCls = c.decision==='same' ? 'same' : 'new';
+    const prev = c.prevImg
+      ? `<img src="${c.prevImg}" alt="">`
+      : '<span class="cmp-none">なし</span>';
+    const row = document.createElement('div');
+    row.className = 'cmp-row np-in';
+    row.innerHTML = `
+      <div class="cmp-head">
+        <span class="cmp-name">${escapeHtml(p.name)}</span>
+        <span class="cmp-pct">一致度 ${pctTxt}</span>
+        <span class="cmp-tag ${tagCls}">${tag}</span>
+      </div>
+      <div class="cmp-imgs">
+        <div class="cmp-cell"><label>前回（比較対象）</label><div class="cmp-pic">${prev}</div></div>
+        <div class="cmp-arrow">→</div>
+        <div class="cmp-cell"><label>今回</label><div class="cmp-pic"><img src="${c.curImg}" alt=""></div></div>
+      </div>`;
+    box.appendChild(row);
+  }
 }
 
 /* デバッグ：縮小フレーム＋検出枠 */
