@@ -563,13 +563,14 @@ const CFG = {
   BIG_LINE_RATIO: 1.45,// 基準行高のこの倍より高い行は日付時刻ブロック等として除外
   STRETCH_Y: 1.8,      // 検出時だけ縦に引き延ばす倍率（細い名前行を拾いやすく）
   THICKEN: 1,          // 文字を太くする画素（細いフォント対策）0=なし
-  BUBBLE_DARK: 95,     // フキダシの地とみなす暗さ（輝度これ未満）
-  BUBBLE_DARK_FRAC: 0.5,// 文字周囲がこの割合以上暗ければフキダシ内と判定
+  BUBBLE_DARK: 95,     // フキダシの地とみなす暗さの目安（伸長の下限などに使用）
+  BUBBLE_CONTRAST: 16, // 文字の地が背景よりこれ以上暗ければフキダシ（局所コントラスト）
+  BUBBLE_DARK_FRAC: 0.5,
   LIB_DIFF: 0.10,      // 保存済み画像との一致しきい値（小さいほど厳しい）
 };
 
 /* ---- バージョン（新コードごとに +0.1）---- */
-const VERSION = '2.3';
+const VERSION = '2.4';
 
 /* ---- 状態 ---- */
 const S = {
@@ -815,24 +816,51 @@ function lumaMaskArrs(img, w, h){
   }
   return luma;
 }
-function isInBubble(luma, white, w, h, b){
-  // 文字bboxの少し外側(=フキダシの地)が暗いか
-  const pad=Math.max(3, Math.min(16, Math.round(b.h*0.6)));
-  const x0=Math.max(0,b.x-pad), y0=Math.max(0,b.y-pad);
-  const x1=Math.min(w-1,b.x+b.w+pad), y1=Math.min(h-1,b.y+b.h+pad);
-  let darkN=0, tot=0, sum=0;
-  for(let y=y0;y<=y1;y++){
-    const row=y*w;
+// テキスト枠の外側 p0..p1 のリング平均輝度（白文字は除外）
+function ringMeanLuma(luma, white, w, h, b, p0, p1){
+  const x0=Math.max(0,b.x-p1), y0=Math.max(0,b.y-p1);
+  const x1=Math.min(w-1,b.x+b.w-1+p1), y1=Math.min(h-1,b.y+b.h-1+p1);
+  const ix0=b.x-p0, iy0=b.y-p0, ix1=b.x+b.w-1+p0, iy1=b.y+b.h-1+p0;
+  let s=0,n=0;
+  for(let y=y0;y<=y1;y++){ const row=y*w;
     for(let x=x0;x<=x1;x++){
-      if(white[row+x]) continue;          // 文字自体は除外
-      const L=luma[row+x];
-      tot++; sum+=L;
-      if(L < CFG.BUBBLE_DARK) darkN++;
+      if(x>=ix0&&x<=ix1&&y>=iy0&&y<=iy1) continue;  // 内側は除外＝リングのみ
+      if(white[row+x]) continue;
+      s+=luma[row+x]; n++;
     }
   }
-  if(tot<8) return false;
-  const darkFrac=darkN/tot, mean=sum/tot;
-  return darkFrac >= CFG.BUBBLE_DARK_FRAC && mean < CFG.BUBBLE_DARK+18;
+  return n? s/n : 255;
+}
+// フキダシ判定：文字のすぐ外(=地)が、さらに外(=背景)より明確に暗いか（局所コントラスト）
+function isInBubble(luma, white, w, h, b){
+  const inPad = Math.max(2, Math.min(10, Math.round(b.h*0.45)));
+  const innerL = ringMeanLuma(luma, white, w, h, b, 0, inPad);                 // 地
+  const outerL = ringMeanLuma(luma, white, w, h, b, inPad+4, inPad+4+Math.max(6,Math.round(b.h*1.3))); // 背景
+  return (outerL - innerL) >= CFG.BUBBLE_CONTRAST && innerL < outerL - 6;
+}
+// 文字枠から「暗いフキダシの地」の広がりまで枠を伸ばす（局所しきい値）
+function bubbleExtent(luma, w, h, tb){
+  const padV=Math.max(6,Math.round(tb.h*1.8)), padH=Math.max(8,Math.round(tb.h*2.4));
+  const wx0=Math.max(0,tb.x-padH), wx1=Math.min(w-1,tb.x+tb.w-1+padH);
+  const wy0=Math.max(0,tb.y-padV), wy1=Math.min(h-1,tb.y+tb.h-1+padV);
+  // 背景輝度＝窓の上下端の中央値
+  const bgv=[];
+  for(let x=wx0;x<=wx1;x++){ bgv.push(luma[wy0*w+x]); bgv.push(luma[wy1*w+x]); }
+  bgv.sort((a,b)=>a-b);
+  const bg=bgv[bgv.length>>1]||90;
+  const thr=Math.max(28, Math.min(bg-14, bg*0.74));
+  const dRow=(y,x0,x1)=>{ let c=0,t=0; for(let x=x0;x<=x1;x++){t++; if(luma[y*w+x]<thr)c++;} return t?c/t:0; };
+  const dCol=(x,y0,y1)=>{ let c=0,t=0; for(let y=y0;y<=y1;y++){t++; if(luma[y*w+x]<thr)c++;} return t?c/t:0; };
+  let top=tb.y, bot=tb.y+tb.h-1, left=tb.x, right=tb.x+tb.w-1;
+  const RF=0.45; let go=true, guard=0, MX=(padV+padH+tb.w+tb.h)*2+60;
+  while(go && guard++<MX){
+    go=false;
+    if(top-1>=wy0  && dRow(top-1,left,right)>RF){ top--;  go=true; }
+    if(bot+1<=wy1  && dRow(bot+1,left,right)>RF){ bot++;  go=true; }
+    if(left-1>=wx0 && dCol(left-1,top,bot)>RF){  left--; go=true; }
+    if(right+1<=wx1&& dCol(right+1,top,bot)>RF){ right++;go=true; }
+  }
+  return { x:left, y:top, w:right-left+1, h:bot-top+1 };
 }
 function detectCapsules(srcCanvas, w, h){
   // Step1素材：白文字行（細名前対策で引き伸ばし検出済み）＋元フレームの輝度/白
@@ -872,7 +900,8 @@ function detectCapsules(srcCanvas, w, h){
     const by=Math.min(...group.map(g=>g.y));
     const bx2=Math.max(...group.map(g=>g.x+g.w));
     const by2=Math.max(...group.map(g=>g.y+g.h));
-    const box={ x:bx, y:by, w:bx2-bx, h:by2-by };
+    const textUnion={ x:bx, y:by, w:bx2-bx, h:by2-by };
+    const box = bubbleExtent(luma, w, h, textUnion);   // フキダシの地まで枠を広げる
     const thick = group.length===2;
     const nameBox = group[group.length-1];                          // Step3：一番下=名前（1行）
     const chatBox = thick ? group[0] : null;                        // 上=チャット（1行のみ）
@@ -1603,9 +1632,9 @@ function runPhaseInspect(){
   S._phaseCap=cap; S._phaseScale=s;          // クリック調査用
   const base=(c)=>{ c.width=Math.round(cap.w*s); c.height=Math.round(cap.h*s); const x=c.getContext('2d'); x.drawImage(cap.canvas,0,0,c.width,c.height); x.fillStyle='rgba(10,16,20,.5)'; x.fillRect(0,0,c.width,c.height); return x; };
   // Step1
-  const x1=base(cvs[0]); x1.lineWidth=2; x1.strokeStyle='#39d6e0';
-  caps.forEach(cp=> x1.strokeRect(cp.box.x*s, cp.box.y*s, cp.box.w*s, cp.box.h*s));
-  plabel(x1, 4, 16, 'カプセル '+caps.length+'個', '#39d6e0');
+  const x1=base(cvs[0]); x1.lineWidth=2; x1.strokeStyle='#39d6e0'; x1.fillStyle='rgba(57,214,224,.16)';
+  caps.forEach(cp=>{ x1.fillRect(cp.box.x*s, cp.box.y*s, cp.box.w*s, cp.box.h*s); x1.strokeRect(cp.box.x*s, cp.box.y*s, cp.box.w*s, cp.box.h*s); });
+  plabel(x1, 4, 16, 'フキダシ '+caps.length+'個（地まで枠取り）', '#39d6e0');
   // Step2
   const x2=base(cvs[1]); x2.lineWidth=2;
   caps.forEach(cp=>{
