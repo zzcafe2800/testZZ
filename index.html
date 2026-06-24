@@ -614,6 +614,8 @@ const CFG = {
   GAP_MAX: 0.8,        // 1行内の白文字の横の隙間の上限（行高の倍率）。超えたら別物が混在＝除外
   NAME_SIG_DIFF: 0.20, // 名前一致のしきい値（=一致度80%以上で同一とみなす）
   NEW_PCT: 65,         // 一致度がこれ以下→新規（通知音）
+  CHAT_SIG_MAXW: 220,  // チャット比較シグネチャの横幅上限（px）
+  CHAT_W_POW: 0.5,     // チャット比較の幅差ペナルティ（小=末尾の絵文字を無視しやすい／大=長さ違いに厳しい）
   REPLACE_PCT: 70,     // NEW_PCT超〜これ以下→新規にせず前の画像を静かに差し替え
   BIG_LINE_RATIO: 1.45,// 基準行高のこの倍より高い行は日付時刻ブロック等として除外
   STRETCH_Y: 1.8,      // 検出時だけ縦に引き延ばす倍率（細い名前行を拾いやすく）
@@ -624,7 +626,7 @@ const CFG = {
 };
 
 /* ---- バージョン（新コードごとに +0.1）---- */
-const VERSION = '3.1';
+const VERSION = '3.2';
 
 /* ---- 状態 ---- */
 const S = {
@@ -1198,6 +1200,35 @@ function sigDiff(a,b){
   let s=0;
   for(let i=0;i<a.length;i++){ const d=a[i]-b[i]; s+= d<0?-d:d; }
   return s/a.length;
+}
+
+// チャット比較用シグネチャ：高さだけ固定し、横は縦横比そのまま（左そろえ）の白カバレッジ
+function chatSignature(src){
+  const m = maskCanvas(src);
+  if(!m) return null;
+  const H=CFG.GRID_H;                                          // 高さ16に正規化
+  let W = Math.round(H * m.width / m.height);
+  W = Math.max(4, Math.min(CFG.CHAT_SIG_MAXW||220, W));        // 横は比率維持＋上限
+  const t=document.createElement('canvas'); t.width=W; t.height=H;
+  const tc=t.getContext('2d',{willReadFrequently:true});
+  tc.imageSmoothingEnabled=true; tc.clearRect(0,0,W,H);
+  tc.drawImage(m, 0,0,m.width,m.height, 0,0,W,H);
+  const id=tc.getImageData(0,0,W,H).data;
+  const data=new Float32Array(W*H);
+  for(let i=0,p=0;i<id.length;i+=4,p++) data[p]=id[i]/255;
+  return { w:W, h:H, data };
+}
+// 小さい方の幅にそろえ、共通(=左の文字側)領域だけ比較。末尾の絵文字ぶん(幅増)は軽視
+function chatSigDiff(a,b){
+  if(!a||!b) return 1;
+  const H=a.h, cw=Math.min(a.w,b.w);
+  if(cw<1) return 1;
+  let s=0;
+  for(let y=0;y<H;y++){ const ra=y*a.w, rb=y*b.w; for(let x=0;x<cw;x++){ const d=a.data[ra+x]-b.data[rb+x]; s+= d<0?-d:d; } }
+  const meanDiff = s/(cw*H);                                   // 共通部分の差
+  const wr = Math.min(a.w,b.w)/Math.max(a.w,b.w);              // 幅の比
+  const match = (1-meanDiff) * Math.pow(wr, CFG.CHAT_W_POW||0.5);  // 幅差は軽いペナルティ
+  return 1 - Math.max(0, Math.min(1, match));
 }
 
 // OCR向け：白だけ→反転して黒文字on白＋拡大
@@ -2045,11 +2076,11 @@ async function processFrame(){
 
       // チャット＝名前の上の行
       const chatCrop = cropCanvas(cap.canvas, card.chatBox, CFG.CROP_PAD);
-      const chatSig = signature(chatCrop);
-      if(chatSig){
+      const cSig = chatSignature(chatCrop);
+      if(cSig){
         const curURL = chatCrop.toDataURL();          // 比較・開発ビュー用(生)
         const has = !!player.lastChatSig;
-        const diff = has ? sigDiff(chatSig, player.lastChatSig) : 1;
+        const diff = has ? chatSigDiff(cSig, player.lastChatSig) : 1;   // 小さい方の幅にそろえて比較（絵文字を無視）
         const pct = has ? Math.max(0, Math.min(100, (1-diff)*100)) : null;
         // 3段階：NEW_PCT以下→新規(音)／NEW_PCT超〜REPLACE_PCT以下→静かに差し替え／それ超→同じ
         let decision;
@@ -2063,14 +2094,14 @@ async function processFrame(){
         if(decision === 'first' || decision === 'new'){
           const dispURL = processChatImage(chatCrop);  // 背景透明＋文字色を反転
           addChat(player, dispURL);
-          player.lastChatSig = chatSig;
+          player.lastChatSig = cSig;
           player.lastChatImg = curURL;
           added++;
           notifyNewChat(player, nameCrop, chatCrop, decision);
         } else if(decision === 'replace'){
           const dispURL = processChatImage(chatCrop);
           replaceChat(player, dispURL);
-          player.lastChatSig = chatSig;
+          player.lastChatSig = cSig;
           player.lastChatImg = curURL;
         }
       }
