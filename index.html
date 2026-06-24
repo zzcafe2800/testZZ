@@ -292,6 +292,7 @@ details.dbg>summary::before{content:"🔍 ";opacity:.8}
 .pi-crop{background:#11181c;border-radius:5px;padding:2px 5px;display:flex;align-items:center;min-height:20px}
 .pi-crop img{max-height:22px;max-width:120px;height:auto;display:block}
 .pi-arr{color:#9fb6c0;font-weight:800}
+.pi-grp{font-size:.8rem;font-weight:800;color:var(--water-deep);margin:9px 0 2px;border-bottom:1px solid var(--line);padding-bottom:3px}
 .pi-ok{margin-left:auto;font-size:.76rem;font-weight:800;color:#2f9aa6;white-space:nowrap}
 .pi-new{margin-left:auto;font-size:.74rem;font-weight:800;color:var(--warn);white-space:nowrap}
 .pv-cands-list{overflow-y:auto;padding:0 7px 7px;display:flex;flex-direction:column;gap:7px}
@@ -935,6 +936,98 @@ function unionBoxes(arr){
   const x=Math.min(...arr.map(b=>b.x)), y=Math.min(...arr.map(b=>b.y));
   const x2=Math.max(...arr.map(b=>b.x+b.w)), y2=Math.max(...arr.map(b=>b.y+b.h));
   return { x, y, w:x2-x, h:y2-y };
+}
+
+/* ===== 新方式：画面の全「横一列の文字」を取り、線の太さで2組に分ける =====
+   フキダシ検出（重なりに弱い）に代えてメインの認識に使う。
+   1) 全文字行を検出（フキダシ判定なし）
+   2) 各行のストローク太さ（高さで正規化）を測り、最大ギャップで2グループへ
+   3) 各行を登録名画像と照合 → 一致した行＝名前。名前が多く属する組＝名前組／他＝チャット組
+   4) 一致した名前の「上にある（横が重なる近接の）チャット組の行」＝チャット。無ければ中断 */
+function detectAllLinesScaled(srcCanvas, w, h){
+  const maxW = CFG.DETECT_MAX_W || 1400;
+  const ds = Math.min(1, maxW / w);
+  let src=srcCanvas, dw=w, dh=h, inv=1;
+  if(ds < 0.999){
+    dw=Math.max(1,Math.round(w*ds)); dh=Math.max(1,Math.round(h*ds)); inv=1/ds;
+    if(!_detCanvas){ _detCanvas=document.createElement('canvas'); _detCtx=_detCanvas.getContext('2d',{willReadFrequently:true}); }
+    if(_detCanvas.width!==dw) _detCanvas.width=dw;
+    if(_detCanvas.height!==dh) _detCanvas.height=dh;
+    _detCtx.drawImage(srcCanvas,0,0,dw,dh);
+    src=_detCanvas;
+  }
+  const { lines } = detectLinesStretched(src, dw, dh, CFG);
+  return lines.map(b=>({ x:b.x*inv, y:b.y*inv, w:b.w*inv, h:b.h*inv }));
+}
+// 行のストローク太さ（白面積/境界画素 ≒ 半幅px、行高で正規化）。膨張は使わず素の白で測る
+function measureLineThickness(srcCanvas, box){
+  const x=Math.max(0,Math.round(box.x)), y=Math.max(0,Math.round(box.y));
+  const w=Math.min(srcCanvas.width-x, Math.round(box.w)), h=Math.min(srcCanvas.height-y, Math.round(box.h));
+  if(w<2||h<2) return null;
+  const ctx=srcCanvas.getContext('2d',{willReadFrequently:true});
+  const d=ctx.getImageData(x,y,w,h).data;
+  const wm=new Uint8Array(w*h);
+  const MIN=CFG.WHITE_MIN-26, SP=CFG.WHITE_SPREAD+12;
+  let area=0;
+  for(let i=0,p=0;i<d.length;i+=4,p++){
+    const r=d[i],g=d[i+1],b=d[i+2];
+    const mx=r>g?(r>b?r:b):(g>b?g:b), mn=r<g?(r<b?r:b):(g<b?g:b);
+    if(mn>=MIN && (mx-mn)<=SP){ wm[p]=1; area++; }
+  }
+  if(area<6) return null;
+  let bnd=0;
+  for(let yy=0;yy<h;yy++)for(let xx=0;xx<w;xx++){
+    const p=yy*w+xx; if(!wm[p]) continue;
+    if(xx===0||xx===w-1||yy===0||yy===h-1 || !wm[p-1]||!wm[p+1]||!wm[p-w]||!wm[p+w]) bnd++;
+  }
+  const half = area/Math.max(1,bnd);     // ≒ ストローク半幅(px)
+  return half / h;                       // 高さ正規化（フォント大小の影響を除く・縮小でも不変）
+}
+function recognizeStructure(srcCanvas, w, h){
+  const boxes = detectAllLinesScaled(srcCanvas, w, h);
+  const items=[];
+  for(const b of boxes){ const th=measureLineThickness(srcCanvas, b); if(th!=null) items.push({ box:b, th }); }
+  if(!items.length) return { items:[], cards:[], splitVal:null, nameGrp:0, chatGrp:1 };
+  // 太さで2グループ（正規化太さの最大ギャップで分割）
+  let splitVal=null;
+  if(items.length>=2){
+    const ths=items.map(o=>o.th).slice().sort((a,b)=>a-b);
+    let maxGap=-1, gi=0;
+    for(let i=0;i<ths.length-1;i++){ const g=ths[i+1]-ths[i]; if(g>maxGap){ maxGap=g; gi=i; } }
+    splitVal=(ths[gi]+ths[gi+1])/2;
+  }
+  items.forEach(o=>{ o.grp = (splitVal==null)?0:(o.th<=splitVal?0:1); });   // 0=細, 1=太
+  // 各行を登録名と照合
+  items.forEach(o=>{ o.crop=cropCanvas(srcCanvas, o.box, CFG.CROP_PAD); o.match=matchInfo(o.crop); o.hit=!!o.match.via; });
+  // 名前組＝一致した行が多く属する組（無ければ細い方を仮定＝表示用）
+  const matched=items.filter(o=>o.hit);
+  let nameGrp=0;
+  if(matched.length){ let c0=0,c1=0; matched.forEach(o=> o.grp===0?c0++:c1++); nameGrp = c1>c0?1:0; }
+  const chatGrp = nameGrp===1?0:1;
+  // カード：一致した名前行の上にある近接チャット組行＝チャット。無ければ中断
+  const cards=[];
+  const nearestAbove=(nm, requireChatGrp)=>{
+    let chat=null, best=1e9;
+    for(const ch of items){
+      if(ch===nm) continue;
+      if(requireChatGrp){ if(splitVal!=null && ch.grp!==chatGrp) continue; }   // チャット字形のみ
+      else { if(ch.hit) continue; }                                            // フォールバック：未一致行（名前ではない）
+      if(ch.box.y >= nm.box.y) continue;                                       // 上だけ
+      const gap = nm.box.y - (ch.box.y+ch.box.h);
+      if(gap < -nm.box.h*0.5 || gap > nm.box.h*1.8) continue;                  // 近接のみ
+      const ox = Math.min(ch.box.x+ch.box.w, nm.box.x+nm.box.w) - Math.max(ch.box.x, nm.box.x);
+      if(ox/Math.min(ch.box.w,nm.box.w) < 0.3) continue;                       // 横が揃ってる
+      if(gap<best){ best=gap; chat=ch; }
+    }
+    return chat;
+  };
+  for(const nm of items){
+    if(!nm.hit) continue;
+    const chat = nearestAbove(nm, true) || nearestAbove(nm, false);  // まずチャット組／無ければ直上の未一致行
+    if(!chat) continue;                                              // 上に無ければ中断
+    cards.push({ match:nm.match, nameBox:nm.box, chatBox:chat.box });
+  }
+  return { items, cards, splitVal, nameGrp, chatGrp };
 }
 
 function cropCanvas(src, box, pad){
@@ -1610,7 +1703,7 @@ function ensurePhaseModal(){
   bg=document.createElement('div'); bg.id='phaseModalBg'; bg.className='modal-bg';
   bg.innerHTML=`
     <div class="modal np phase-modal">
-      <h3>名前の検出（検査）</h3>
+      <h3>文字の検出（太さで2組に分けて照合）</h3>
       <div class="ph-block"><canvas id="phaseNames"></canvas></div>
       <div class="pi-list" id="phaseNameList"></div>
       <button id="phaseClose" class="btn primary" style="width:100%;margin-top:10px">閉じる</button>
@@ -1626,37 +1719,54 @@ function plabel(ctx,x,y,text,color){
   ctx.fillStyle=color; ctx.fillRect(x, Math.max(0,y-14), w, 14);
   ctx.fillStyle='#fff'; ctx.fillText(text, x+4, Math.max(10,y-3));
 }
-// 検査＝名前検索だけ：検出した名前枠を表示＋切り抜きと「保存済みのどれと何%か」
+// 検査＝新方式の確認：全行を「太さで2組」に分け、名前組は登録画像と照合（最も近い保存＋一致度）
 function runPhaseInspect(){
   const bg=ensurePhaseModal(); bg.classList.remove('hidden');
   const cap=getActiveFrame();
   const cv=el('phaseNames'); const listEl=el('phaseNameList');
   if(listEl) listEl.innerHTML='';
   if(!cap){ if(cv){ cv.width=300;cv.height=40; const x=cv.getContext('2d'); x.fillStyle='#234'; x.fillRect(0,0,300,40); x.fillStyle='#fff'; x.font='13px sans-serif'; x.fillText('映像がありません',10,25);} return; }
-  const caps=detectCapsulesScaled(cap.canvas, cap.w, cap.h);
+  const rec=recognizeStructure(cap.canvas, cap.w, cap.h);
   const maxW=Math.min(540, (window.innerWidth||540)-64);
   const s=Math.min(1, maxW/cap.w);
   cv.width=Math.round(cap.w*s); cv.height=Math.round(cap.h*s);
   const x=cv.getContext('2d');
   x.drawImage(cap.canvas,0,0,cv.width,cv.height);
-  x.fillStyle='rgba(10,16,20,.45)'; x.fillRect(0,0,cv.width,cv.height);
-  x.lineWidth=2; x.strokeStyle='#ff5fae'; x.fillStyle='rgba(255,95,174,.20)';
-  caps.forEach(cp=>{ const nb=cp.nameBox; if(!nb) return; x.fillRect(nb.x*s,nb.y*s,nb.w*s,nb.h*s); x.strokeRect(nb.x*s,nb.y*s,nb.w*s,nb.h*s); });
-  plabel(x, 4, 16, '検出した名前 '+caps.length+'個', '#ff5fae');
+  x.fillStyle='rgba(10,16,20,.5)'; x.fillRect(0,0,cv.width,cv.height);
+  const COL=['#39d6e0','#e8954a'];           // 0=細(cyan) / 1=太(orange)
+  x.lineWidth=2;
+  rec.items.forEach(o=>{ x.strokeStyle=COL[o.grp]; x.strokeRect(o.box.x*s,o.box.y*s,o.box.w*s,o.box.h*s); });
+  rec.cards.forEach(cd=>{                      // 一致した名前＝桃塗り／採用チャット＝緑枠
+    x.fillStyle='rgba(255,95,174,.22)'; x.strokeStyle='#ff5fae';
+    x.fillRect(cd.nameBox.x*s,cd.nameBox.y*s,cd.nameBox.w*s,cd.nameBox.h*s);
+    x.strokeRect(cd.nameBox.x*s,cd.nameBox.y*s,cd.nameBox.w*s,cd.nameBox.h*s);
+    x.strokeStyle='#5bd6a0'; x.strokeRect(cd.chatBox.x*s,cd.chatBox.y*s,cd.chatBox.w*s,cd.chatBox.h*s);
+  });
+  const nameLbl = rec.splitVal==null ? '—' : (rec.nameGrp===0?'細字':'太字');
+  plabel(x, 4, 16, `細=水色 太=橙／名前組=${nameLbl}・桃=登録一致 緑=チャット`, '#cfe0e8');
   if(listEl){
-    caps.forEach(cp=>{
-      if(!cp.nameBox) return;
-      const crop=cropCanvas(cap.canvas, cp.nameBox, CFG.CROP_PAD);
-      const info=matchInfo(crop);
-      const row=document.createElement('div'); row.className='pi-name';
-      const ref = info.libImg ? `<span class="pi-arr">≈</span><div class="pi-crop"><img src="${info.libImg}"></div>` : '';
-      const tag = info.via
-        ? `<span class="pi-ok">${info.via==='session'?'登録済':'保存済'}と一致 ${(info.libPct!=null?info.libPct:info.pct)}%</span>`
-        : `<span class="pi-new">新規${info.libPct!=null?`（最も近い保存 ${info.libPct}%）`:''}</span>`;
-      row.innerHTML = `<div class="pi-crop"><img src="${crop.toDataURL()}"></div>${ref}${tag}`;
-      listEl.appendChild(row);
-    });
-    if(!caps.length) listEl.innerHTML='<div class="pc-empty" style="color:#9fb6c0">名前が見つかりませんでした</div>';
+    const addGroup=(title, grp, showMatch)=>{
+      const lines=rec.items.filter(o=>o.grp===grp).sort((a,b)=>a.box.y-b.box.y);
+      if(!lines.length) return;
+      const head=document.createElement('div'); head.className='pi-grp';
+      head.textContent=`${title}（${grp===0?'細字':'太字'}・${lines.length}行）${grp===rec.nameGrp?' ← 名前組':''}`;
+      listEl.appendChild(head);
+      lines.forEach(o=>{
+        const row=document.createElement('div'); row.className='pi-name';
+        let right='';
+        if(showMatch){
+          const info=o.match;
+          const ref = info.libImg ? `<span class="pi-arr">≈</span><div class="pi-crop"><img src="${info.libImg}"></div>` : '';
+          right = info.via
+            ? `${ref}<span class="pi-ok">${info.via==='session'?'登録済':'保存済'} ${(info.libPct!=null?info.libPct:info.pct)}%</span>`
+            : `${ref}<span class="pi-new">${info.libPct!=null?`最も近い保存 ${info.libPct}%`:'保存なし'}</span>`;
+        }
+        row.innerHTML=`<div class="pi-crop"><img src="${o.crop.toDataURL()}"></div>${right}`;
+        listEl.appendChild(row);
+      });
+    };
+    if(!rec.items.length){ listEl.innerHTML='<div class="pc-empty" style="color:#9fb6c0">文字が見つかりませんでした</div>'; }
+    else { addGroup('名前組', rec.nameGrp, true); addGroup('チャット組', rec.chatGrp, false); }
   }
 }
 
@@ -1758,55 +1868,57 @@ async function processFrame(){
     if(S.moving){ updateStatus(); return; }         // 移動中は切り取り中断
     const cap = captureFrame();
     if(!cap){ return; }
-    const caps = detectCapsulesScaled(cap.canvas, cap.w, cap.h);
+    const rec = recognizeStructure(cap.canvas, cap.w, cap.h);   // 新方式：全行→太さで2組→名前照合→上のチャット
 
     let matched=0, added=0;
     const dbgRows=[];
     S.players.forEach(p=>p.present=false);
 
-    for(const capsule of caps){
-      const nameCrop = cropCanvas(cap.canvas, capsule.nameBox, CFG.CROP_PAD);
-      const player = await resolvePlayer(nameCrop);
-      dbgRows.push({card:{chat:capsule.chatBox, name:capsule.nameBox}, name: player ? player.name : ''});
+    for(const card of rec.cards){
+      const nameCrop = cropCanvas(cap.canvas, card.nameBox, CFG.CROP_PAD);
+      // プレイヤー解決（セッション内 or 保存から昇格）
+      let player = card.match.via==='session' ? card.match.player
+                 : card.match.via==='library' ? await promoteFromLibrary(card.match.lib)
+                 : await resolvePlayer(nameCrop);
+      dbgRows.push({card:{chat:card.chatBox, name:card.nameBox}, name: player ? player.name : ''});
       if(!player) continue;
       matched++;
       player.present = true;
 
-      if(capsule.type==='thick' && capsule.chatBox){
-        const chatCrop = cropCanvas(cap.canvas, capsule.chatBox, CFG.CROP_PAD);
-        const chatSig = signature(chatCrop);
-        if(chatSig){
-          const curURL = chatCrop.toDataURL();          // 比較・開発ビュー用(生)
-          const has = !!player.lastChatSig;
-          const diff = has ? sigDiff(chatSig, player.lastChatSig) : 1;
-          const pct = has ? Math.max(0, Math.min(100, (1-diff)*100)) : null;
-          // 3段階：NEW_PCT以下→新規(音)／NEW_PCT超〜REPLACE_PCT以下→静かに差し替え／それ超→同じ
-          let decision;
-          if(!has) decision = 'first';
-          else if(pct <= CFG.NEW_PCT) decision = 'new';
-          else if(pct <= CFG.REPLACE_PCT) decision = 'replace';
-          else decision = 'same';
+      // チャット＝名前の上の行
+      const chatCrop = cropCanvas(cap.canvas, card.chatBox, CFG.CROP_PAD);
+      const chatSig = signature(chatCrop);
+      if(chatSig){
+        const curURL = chatCrop.toDataURL();          // 比較・開発ビュー用(生)
+        const has = !!player.lastChatSig;
+        const diff = has ? sigDiff(chatSig, player.lastChatSig) : 1;
+        const pct = has ? Math.max(0, Math.min(100, (1-diff)*100)) : null;
+        // 3段階：NEW_PCT以下→新規(音)／NEW_PCT超〜REPLACE_PCT以下→静かに差し替え／それ超→同じ
+        let decision;
+        if(!has) decision = 'first';
+        else if(pct <= CFG.NEW_PCT) decision = 'new';
+        else if(pct <= CFG.REPLACE_PCT) decision = 'replace';
+        else decision = 'same';
 
-          player.cmp = { prevImg: player.lastChatImg || null, curImg: curURL, pct, decision, at: Date.now() };
+        player.cmp = { prevImg: player.lastChatImg || null, curImg: curURL, pct, decision, at: Date.now() };
 
-          if(decision === 'first' || decision === 'new'){
-            const dispURL = processChatImage(chatCrop);  // 背景透明＋文字色を反転
-            addChat(player, dispURL);
-            player.lastChatSig = chatSig;
-            player.lastChatImg = curURL;
-            added++;
-            notifyNewChat(player, nameCrop, chatCrop, decision);
-          } else if(decision === 'replace'){
-            const dispURL = processChatImage(chatCrop);
-            replaceChat(player, dispURL);
-            player.lastChatSig = chatSig;
-            player.lastChatImg = curURL;
-          }
+        if(decision === 'first' || decision === 'new'){
+          const dispURL = processChatImage(chatCrop);  // 背景透明＋文字色を反転
+          addChat(player, dispURL);
+          player.lastChatSig = chatSig;
+          player.lastChatImg = curURL;
+          added++;
+          notifyNewChat(player, nameCrop, chatCrop, decision);
+        } else if(decision === 'replace'){
+          const dispURL = processChatImage(chatCrop);
+          replaceChat(player, dispURL);
+          player.lastChatSig = chatSig;
+          player.lastChatImg = curURL;
         }
       }
     }
 
-    S.lastInfo = { cards:caps.length, matched, added, at: timeStr() };
+    S.lastInfo = { cards: rec.cards.length, matched, added, at: timeStr() };
     updatePresent();
     drawDebug(cap, dbgRows);
     renderCompare();
