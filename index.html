@@ -129,6 +129,18 @@ details.cfg>summary::before{content:"⚙ ";opacity:.7}
 }
 .cp-head{padding:13px 15px 10px;flex:none}
 .cp-head-row1{display:flex;align-items:center;gap:10px}
+/* PiP最小化ボタン（既定は非表示、PiP時のみ表示） */
+.cp-collapse{display:none;margin-left:8px;border:none;background:var(--panel);color:var(--water-deep);
+  font-weight:800;font-size:.86rem;line-height:1;width:30px;height:28px;border-radius:9px;cursor:pointer;
+  box-shadow:3px 3px 7px var(--lo),-3px -3px 7px var(--hi)}
+.cp-collapse:active{box-shadow:inset 2px 2px 5px var(--lo),inset -2px -2px 5px var(--hi)}
+/* 最小化中：ヘッダー以外を隠す */
+#chatPanel.collapsed{height:auto;max-height:none}
+#chatPanel.collapsed .cp-icons,
+#chatPanel.collapsed .cp-tabs,
+#chatPanel.collapsed .cp-log,
+#chatPanel.collapsed .cp-foot{display:none}
+.pip-body #chatPanel.collapsed{height:100vh}
 .cp-title{font-weight:800;font-size:1.12rem;color:var(--water-deep);letter-spacing:.04em}
 .cp-clock{margin-left:auto;font-weight:800;font-size:1.12rem;color:var(--ink);font-variant-numeric:tabular-nums}
 .cp-icons{display:flex;gap:8px;margin-top:11px;justify-content:flex-end}
@@ -495,6 +507,7 @@ details.dbg>summary::before{content:"🔍 ";opacity:.8}
         <div class="cp-head-row1">
           <span class="cp-title">チャット</span>
           <span class="cp-clock" id="cpClock">--:--</span>
+          <button class="cp-collapse" id="collapseBtn" title="PiPを最小化 / 元に戻す">▲</button>
         </div>
         <div class="cp-icons">
           <button class="cp-ic" id="capPauseBtn" title="画面の動きを一時停止">&#10073;&#10073;</button>
@@ -608,7 +621,7 @@ const CFG = {
 };
 
 /* ---- バージョン（新コードごとに +0.1）---- */
-const VERSION = '2.4';
+const VERSION = '2.5';
 
 /* ---- 状態 ---- */
 const S = {
@@ -646,6 +659,7 @@ const S = {
   lastActivity:Date.now(), away:false, awayPointTs:null, awayClearTimer:null,
   capturePaused:false,
   pipWindow:null,
+  pipCollapsed:false, _pipExpandH:620,
   chatBox:null,          // chatPanel のDOM参照（PiPへ移動しても有効）
   lastInfo:{cards:0, matched:0, added:0, at:'-'},
 };
@@ -2532,23 +2546,56 @@ async function togglePip(){
   try{
     const pip = await documentPictureInPicture.requestWindow({ width:380, height:620 });
     S.pipWindow = pip;
+    S._pipExpandH = 620;
+    S.pipCollapsed = false;
+    if(S.chatBox) S.chatBox.classList.remove('collapsed');
     copyStyles(pip);
     pip.document.title = 'みのがしくん';
     pip.document.body.classList.add('pip-body');
     pip.document.body.appendChild(S.chatBox);
+    const cb=pq('#collapseBtn'); if(cb){ cb.style.display='inline-block'; }   // PiP時のみ表示
+    updateCollapseBtn();
     attachActivity(pip.document);                 // PiP内の操作も「離席解除」に数える
-    pip.addEventListener('resize', ()=>{ if(S.view.mode==='all' && S.view.allMode==='everyone') renderChat(); });
+    pip.addEventListener('resize', ()=>{ if(!S.pipCollapsed && S.view.mode==='all' && S.view.allMode==='everyone') renderChat(); });
     pip.addEventListener('pagehide', ()=>{
       const back = el('runScreen');
       // 実行画面のデバッグ枠の前に戻す
       const dbg = back.querySelector('details.dbg');
       back.insertBefore(S.chatBox, dbg);
       S.pipWindow = null;
+      S.pipCollapsed = false;
+      if(S.chatBox) S.chatBox.classList.remove('collapsed');
+      const cb2=pq('#collapseBtn'); if(cb2) cb2.style.display='none';         // メインでは隠す
     });
   }catch(e){
     console.warn('pip', e);
     toast('PiPを開けませんでした');
   }
+}
+// PiPの最小化／復帰（▲＝最小化, ▼＝戻す）
+function togglePipCollapse(){
+  S.pipCollapsed = !S.pipCollapsed;
+  if(S.chatBox) S.chatBox.classList.toggle('collapsed', S.pipCollapsed);
+  updateCollapseBtn();
+  const pip = S.pipWindow;
+  if(pip){
+    try{
+      if(S.pipCollapsed){
+        S._pipExpandH = pip.outerHeight || S._pipExpandH || 620;          // 戻す高さを記憶
+        const head = S.chatBox && S.chatBox.querySelector('.cp-head');
+        const chrome = Math.max(0, (pip.outerHeight||0) - (pip.innerHeight||0));  // PiPの枠の高さ
+        const h = (head ? head.offsetHeight : 92) + chrome + 6;
+        pip.resizeTo(pip.outerWidth || 380, Math.round(h));               // 一番短く
+      }else{
+        pip.resizeTo(pip.outerWidth || 380, S._pipExpandH || 620);        // 元に戻す
+      }
+    }catch(_){}
+  }
+}
+function updateCollapseBtn(){
+  const b = pq('#collapseBtn'); if(!b) return;
+  b.textContent = S.pipCollapsed ? '▼' : '▲';
+  b.title = S.pipCollapsed ? 'PiPを元に戻す' : 'PiPを最小化';
 }
 
 /* ============================ OCR初期化 ============================ */
@@ -2909,6 +2956,7 @@ const _rib=el('runInspectBtn'); if(_rib) _rib.addEventListener('click', runPhase
 el('goBtn').addEventListener('click', goRun);
 el('regBackBtn').addEventListener('click', stopAll);
 el('runPipBtn').addEventListener('click', togglePip);
+el('collapseBtn').addEventListener('click', togglePipCollapse);
 el('shareBtn').addEventListener('click', enableLanShare);
 el('libBtnRun').addEventListener('click', showLibrary);
 el('libBtnReg').addEventListener('click', showLibrary);
