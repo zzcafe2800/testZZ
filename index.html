@@ -179,10 +179,17 @@ details.cfg>summary::before{content:"⚙ ";opacity:.7}
 .ce-head{display:flex;align-items:baseline;gap:9px}
 .ce-name{font-weight:800;font-size:calc(.92rem*var(--ce-scale));color:var(--ce-color,var(--water-deep))}
 .ce-name-img{height:calc(1.05rem*var(--ce-scale));width:auto;max-width:60%;object-fit:contain;display:block}
+.ce-idle{font-size:calc(.78rem*var(--ce-scale));color:var(--ink-soft);opacity:.4;font-weight:700;padding:calc(2px*var(--ce-scale)) 0}
+.ce.idle{opacity:.82}
 .ce-time{font-size:calc(.7rem*var(--ce-scale));color:var(--ink-soft);white-space:nowrap;font-variant-numeric:tabular-nums}
 .ce-msg{margin-top:calc(6px*var(--ce-scale))}
 .ce-msg img{display:block;max-width:100%;height:auto;max-height:calc(46px*var(--ce-scale));image-rendering:auto}
 .feed-empty{padding:26px;text-align:center;color:var(--ink-soft);font-size:.85rem;line-height:1.8}
+/* 離席ライン（あなたがいなかった間のコメントの境目） */
+.away-div{display:flex;align-items:center;gap:8px;margin:calc(3px*var(--ce-scale)) 2px}
+.away-div::before,.away-div::after{content:"";flex:1;height:0;border-top:2px dashed var(--water);opacity:.6}
+.away-div span{white-space:nowrap;font-size:calc(.72rem*var(--ce-scale));font-weight:800;color:var(--water-deep);
+  background:rgba(91,156,184,.16);padding:3px 10px;border-radius:9px}
 
 .cp-foot{flex:none;display:flex;align-items:center;gap:10px;padding:11px 14px;border-top:1px solid rgba(91,156,184,.18)}
 .cp-rt{border:none;border-radius:12px;font:inherit;font-weight:800;font-size:.82rem;padding:9px 16px;cursor:pointer;
@@ -293,6 +300,16 @@ details.dbg>summary::before{content:"🔍 ";opacity:.8}
 .pc-yes,.pc-no{border:none;border-radius:7px;font-weight:800;font-size:.74rem;padding:5px 9px;cursor:pointer;flex:none}
 .pc-yes{background:var(--good);color:#fff}
 .pc-no{background:#cdd9df;color:#3c5a66}
+/* 自動一致（保存済み照合が動いている確認）コンパクト表示 */
+.pc-matched{display:flex;align-items:center;gap:6px;background:rgba(91,184,136,.18);border-radius:9px;padding:5px 7px;flex-wrap:wrap}
+.pc-matched .ok{color:#7fe3a6;font-weight:900;flex:none}
+.pc-matched .mi{background:#11181c;border-radius:5px;padding:2px 4px;display:flex;align-items:center;min-height:18px}
+.pc-matched .mi img{max-height:20px;max-width:84px;height:auto;display:block}
+.pc-matched .arr{color:#9fb6c0;font-weight:800;font-size:.8rem;flex:none}
+.pc-matched .pct{margin-left:auto;font-size:.7rem;font-weight:800;color:#bfe9cf;white-space:nowrap}
+.pc-near{font-size:.68rem;color:#9fb6c0;text-align:center;line-height:1.5;display:flex;align-items:center;justify-content:center;gap:5px;flex-wrap:wrap}
+.pc-near b{color:#dcebf2}
+.pc-near img{max-height:18px;max-width:70px;height:auto;background:#11181c;border-radius:4px;padding:1px 3px}
 
 /* compare (dev) view */
 .cmp-note{font-size:.78rem;color:var(--ink-soft);line-height:1.7;margin-bottom:12px}
@@ -600,6 +617,8 @@ const S = {
   _chipAnim:0,
   shareDir:null,
   timeline:[],
+  // 離席ライン（このサイトを操作していない間に来たコメントの目印）
+  lastActivity:Date.now(), away:false, awayPointTs:null, awayClearTimer:null,
   capturePaused:false,
   pipWindow:null,
   chatBox:null,          // chatPanel のDOM参照（PiPへ移動しても有効）
@@ -864,6 +883,8 @@ function detectCapsules(srcCanvas, w, h){
       }
     }
     group.sort((a,b)=>a.y-b.y);
+    // チャット・名前は必ず横一列（改行なし）。3行以上＝別人が混ざった誤結合なので捨てる。
+    if(group.length > 2) continue;
     const bx=Math.min(...group.map(g=>g.x));
     const by=Math.min(...group.map(g=>g.y));
     const bx2=Math.max(...group.map(g=>g.x+g.w));
@@ -1081,6 +1102,19 @@ async function resolvePlayer(nameCrop){
   for(const e of S.library){ if(!e.sig) continue; const d=sigDiff(sig,e.sig); if(d<ld){ ld=d; lib=e; } }
   if(lib && ld <= CFG.LIB_DIFF){ return await promoteFromLibrary(lib); }
   return null;
+}
+// 副作用なしで「保存済み/今いる人と照合した結果」を返す（候補欄に見せる用）
+function matchInfo(nameCrop){
+  const sig = signature(nameCrop);
+  if(!sig) return { via:null };
+  const pct = d => Math.max(0, Math.round((1-d)*100));
+  let sB=null, sd=1e9;
+  for(const p of S.players){ if(!p.nameSig) continue; const d=sigDiff(sig,p.nameSig); if(d<sd){ sd=d; sB=p; } }
+  let lB=null, ld=1e9;
+  for(const e of S.library){ if(!e.sig) continue; const d=sigDiff(sig,e.sig); if(d<ld){ ld=d; lB=e; } }
+  if(sB && sd <= CFG.NAME_SIG_DIFF) return { via:'session', player:sB, pct:pct(sd), refImg: sB.nameImg || (lB?lB.img:null) };
+  if(lB && ld <= CFG.LIB_DIFF)      return { via:'library', lib:lB, pct:pct(ld), refImg: lB.img };
+  return { via:null, pct: lB?pct(ld):null, refImg: lB?lB.img:null };   // 最も近い保存済みとの%（不一致）
 }
 async function promoteFromLibrary(e){
   const ex = S.players.find(p=>p.libId===e.id);
@@ -1370,21 +1404,43 @@ async function buildCandidates(){
     for(const box of names){
       const crop = cropCanvas(cap.canvas, box, CFG.CROP_PAD);
       const sig = signature(crop); if(!sig) continue;
-      // 既に今いる人 or 保存済み(厳しめ)に一致 → 自動採用して聞かない
-      const p = await resolvePlayer(crop);
-      if(p) continue;
-      list.appendChild(renderCandidate(crop)); shown++;
+      // 保存済み/今いる人と照合（結果を必ず表示して、照合が動いていることが分かるように）
+      const info = matchInfo(crop);
+      if(info.via==='session'){
+        list.appendChild(renderMatched(crop, info)); shown++;
+      }else if(info.via==='library'){
+        await promoteFromLibrary(info.lib);                 // 自動採用
+        list.appendChild(renderMatched(crop, info)); shown++;
+      }else{
+        list.appendChild(renderCandidate(crop, info)); shown++;   // 新しい人＝確認
+      }
     }
-    if(!shown) list.innerHTML='<div class="pc-empty">新しい名前は見つかりませんでした（保存済みは自動登録）</div>';
+    if(!shown) list.innerHTML='<div class="pc-empty">名前が読み取れませんでした</div>';
   }catch(e){ console.warn('buildCandidates', e); }
   finally{ _candBusy=false; }
 }
 // 「これはプレイヤーですか？」切り取った名前画像＋はい/いいえ（テキスト入力なし）
-function renderCandidate(cropCanvas){
+// 自動で「保存済み/今いる人」と一致した時のコンパクト表示（照合が動いている確認用）
+function renderMatched(cropCanvas, info){
+  const it=document.createElement('div'); it.className='pc-matched';
+  const ref = info.refImg ? `<span class="arr">≈</span><div class="mi"><img src="${info.refImg}" alt=""></div>` : '';
+  const via = info.via==='session' ? '登録済' : '保存済';
+  it.innerHTML = `<span class="ok">✓</span><div class="mi"><img src="${cropCanvas.toDataURL()}" alt=""></div>${ref}<span class="pct">${via}と一致 ${info.pct}%</span>`;
+  return it;
+}
+function renderCandidate(cropCanvas, info){
   const url = cropCanvas.toDataURL();
   const it=document.createElement('div'); it.className='pc-item';
+  // 保存済みと照合済みであることが分かるよう、最も近い%を出す（不一致＝別人と判断）
+  let near='';
+  if(info && info.pct!=null){
+    near = `<div class="pc-near">保存済みで最も近い <b>${info.pct}%</b>（別人と判断）${info.refImg?` <img src="${info.refImg}" alt="">`:''}</div>`;
+  }else if(info){
+    near = `<div class="pc-near">保存済みに一致なし（新しい人）</div>`;
+  }
   it.innerHTML = `<div class="pc-q">これはプレイヤーですか？</div>
     <div class="pc-crop"><img src="${url}" alt=""></div>
+    ${near}
     <div class="pc-row"><button class="pc-no">いいえ</button><button class="pc-yes">はい</button></div>`;
   it.querySelector('.pc-yes').addEventListener('click', ()=>{ addPlayer(cropCanvas); it.remove(); });
   it.querySelector('.pc-no').addEventListener('click', ()=> it.remove());
@@ -1461,13 +1517,14 @@ async function scanRoomMembers(){
       const abs={ x:rx+b.x, y:ry+b.y, w:b.w, h:b.h };   // 白文字だけ・絶対座標
       const crop=cropCanvas(cap.canvas, abs, CFG.CROP_PAD);
       const sig=signature(crop); if(!sig) continue;
-      // 今いる人 or 保存済み(厳しめ)に一致 → 自動採用して聞かない
-      const p = await resolvePlayer(crop);
-      if(p) continue;
-      list.appendChild(renderCandidate(crop));
+      // 保存済み/今いる人と照合（結果を表示）
+      const info = matchInfo(crop);
+      if(info.via==='session'){ list.appendChild(renderMatched(crop, info)); }
+      else if(info.via==='library'){ await promoteFromLibrary(info.lib); list.appendChild(renderMatched(crop, info)); }
+      else { list.appendChild(renderCandidate(crop, info)); }
     }
-    if(!list.querySelector('.pc-item')){
-      const e=document.createElement('div'); e.className='pc-empty'; e.textContent='新しい名前は見つかりませんでした（保存済みは自動登録）'; list.appendChild(e);
+    if(!list.querySelector('.pc-item') && !list.querySelector('.pc-matched')){
+      const e=document.createElement('div'); e.className='pc-empty'; e.textContent='名前が読み取れませんでした'; list.appendChild(e);
     }
   }catch(e){ console.warn('scanRoomMembers',e); list.innerHTML='<div class="pc-empty">読み取りに失敗しました</div>'; }
   finally{ _candBusy=false; }
@@ -1735,6 +1792,7 @@ function hexToRgb(hex){
   return { r:(n>>16)&255, g:(n>>8)&255, b:n&255 };
 }
 // 白文字だけ残して任意色に着色＋背景透明＋余白詰め
+// 白文字だけ残して任意色に着色＋背景透明＋余白詰め
 function tintWhite(srcCanvas, rgb){
   const w=srcCanvas.width, h=srcCanvas.height;
   const ctx=srcCanvas.getContext('2d',{willReadFrequently:true});
@@ -1782,10 +1840,52 @@ function timeAgo(ts){
 function timeStr(){ const d=new Date(); return d.toLocaleTimeString('ja-JP',{hour12:false}); }
 function clockStr(){ return new Date().toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit',hour12:false}); }
 
+/* ---- 離席ライン：このサイトを操作していない間に来たコメントの境目を出す ---- */
+const AWAY_AFTER = 30000;     // 最後の操作からこれ以上経っていれば「離席中」とみなす(ms)
+let _lastMoveNote = 0;
+function noteActivity(e){
+  const now = Date.now();
+  if(e && e.type==='pointermove'){ if(now-_lastMoveNote < 2000) return; _lastMoveNote = now; } // マウス移動は間引く
+  const wasAway = S.away;
+  S.lastActivity = now;
+  if(wasAway){
+    // 復帰：線は次の操作のあと2分は残す
+    S.away = false;
+    if(S.awayClearTimer) clearTimeout(S.awayClearTimer);
+    S.awayClearTimer = setTimeout(()=>{ S.awayPointTs=null; S.awayClearTimer=null; renderChat(); }, 120000);
+  }
+}
+function attachActivity(doc){
+  if(!doc) return;
+  ['pointerdown','keydown','wheel','pointermove'].forEach(ev=> doc.addEventListener(ev, noteActivity, {passive:true}));
+}
+function awayDividerHTML(ts){
+  const t = new Date(ts).toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit',hour12:false});
+  return `<div class="away-div"><span>🖍 ここから上は離席中のコメント・${t}〜</span></div>`;
+}
+// newest-first の items に離席ラインを差し込む
+function renderItemsWithDivider(items){
+  if(!(S.awayPointTs && items.length)) return items.map(entryHTML).join('');
+  const parts=[]; let inserted=false;
+  for(const e of items){
+    if(!inserted && e.ts <= S.awayPointTs){ parts.push(awayDividerHTML(S.awayPointTs)); inserted=true; }
+    parts.push(entryHTML(e));
+  }
+  if(!inserted) parts.push(awayDividerHTML(S.awayPointTs));   // 全部が離席中＝一番下に線
+  return parts.join('');
+}
+
 /* ---- データモデル：timeline に1セットずつ ---- */
 let _chatId = 0;
 function addChat(player, dispURL){
-  S.timeline.push({ id:++_chatId, name:player.name, nameImg:player.nameDisp||null, color:player.color, img:dispURL, ts:Date.now() });
+  const now = Date.now();
+  // 最後の操作から離れていれば、その操作時点に「ここまで見た」線を引く（離席の最初の1件で固定）
+  if(now - S.lastActivity > AWAY_AFTER && !S.away){
+    S.away = true;
+    if(S.awayClearTimer){ clearTimeout(S.awayClearTimer); S.awayClearTimer=null; }
+    S.awayPointTs = S.lastActivity;
+  }
+  S.timeline.push({ id:++_chatId, name:player.name, nameImg:player.nameDisp||null, color:player.color, img:dispURL, ts:now });
   while(S.timeline.length > 400) S.timeline.shift();
   renderChat();
   scheduleShareWrite();
@@ -1802,9 +1902,13 @@ function entryHTML(e){
   const nameEl = e.nameImg
     ? `<img class="ce-name-img" src="${e.nameImg}" alt="">`
     : `<span class="ce-name">${escapeHtml(e.name)}</span>`;
-  return `<div class="ce" data-id="${e.id}" data-ts="${e.ts}" style="--ce-color:${e.color}">
-    <div class="ce-head">${nameEl}<span class="ce-time">${timeAgo(e.ts)}</span></div>
-    <div class="ce-msg"><img src="${e.img}" alt=""></div>
+  const body = e.idle
+    ? `<div class="ce-idle">やることなし</div>`
+    : `<div class="ce-msg"><img src="${e.img}" alt=""></div>`;
+  const timeEl = e.idle ? '' : `<span class="ce-time">${timeAgo(e.ts)}</span>`;
+  return `<div class="ce${e.idle?' idle':''}" data-id="${e.id}" data-ts="${e.ts}" style="--ce-color:${e.color}">
+    <div class="ce-head">${nameEl}${timeEl}</div>
+    ${body}
   </div>`;
 }
 
@@ -1819,11 +1923,13 @@ function renderChat(){
   if(S.view.mode === 'player'){
     items = S.timeline.filter(e=>e.name===S.view.player).slice().reverse();
   } else if(everyone){
+    // 一覧＝登録した人みんな。コメントが無い人も名前だけ表示する。
     items = [];
     for(const p of S.players){
       let last=null;
       for(let i=S.timeline.length-1;i>=0;i--){ if(S.timeline[i].name===p.name){ last=S.timeline[i]; break; } }
       if(last) items.push(last);
+      else items.push({ id:'idle-'+p.name, name:p.name, nameImg:p.nameDisp||null, color:p.color, idle:true, ts:Date.now() });
     }
   } else {
     items = S.timeline.slice().reverse();
@@ -1848,10 +1954,10 @@ function renderChat(){
       log.parentElement.style.setProperty('--ce-scale', scale.toFixed(3));
     }
   } else {
-    // リアルタイム / 個人：スクロール可
+    // リアルタイム / 個人：スクロール可（離席ラインを差し込む）
     log.style.overflowY = 'auto';
     log.parentElement.style.setProperty('--ce-scale','1');
-    log.innerHTML = items.map(entryHTML).join('');
+    log.innerHTML = renderItemsWithDivider(items);
     log.scrollTop = (S.view.mode==='all' && S.view.allMode==='realtime') ? prevScroll : 0;
   }
 
@@ -2001,12 +2107,10 @@ async function ocrSpeak(canvas){
 async function announceChat(player, nameCrop, chatCrop){
   if(!('speechSynthesis' in window)) return;
   try{
-    if(player.nameText==null){                                   // 名前は一度だけOCRして保持
-      player.nameText = (await ocrName(whitenForOCR(nameCrop))).replace(/\s+/g,'') || '';
-    }
+    // 名前は読まない。濃い(白文字)を黒文字化した高コントラスト画像でOCR。
     let chatText='';
     if(chatCrop) chatText = (await ocrSpeak(whitenForOCR(chatCrop))).replace(/[\u3000\s]+/g,'');
-    speakText(player.nameText, chatText);
+    speakText('', chatText);
   }catch(e){}
 }
 // 新規チャット時の通知（モードで分岐）
@@ -2215,6 +2319,7 @@ async function togglePip(){
     pip.document.title = 'みのがしくん';
     pip.document.body.classList.add('pip-body');
     pip.document.body.appendChild(S.chatBox);
+    attachActivity(pip.document);                 // PiP内の操作も「離席解除」に数える
     pip.addEventListener('resize', ()=>{ if(S.view.mode==='all' && S.view.allMode==='everyone') renderChat(); });
     pip.addEventListener('pagehide', ()=>{
       const back = el('runScreen');
@@ -2299,6 +2404,8 @@ function goRun(){
   el('runScreen').classList.remove('hidden');
   S.running=true;
   S.moving=false; S.moveMarkers=[]; S.capturePaused=false;
+  S.lastActivity=Date.now(); S.away=false; S.awayPointTs=null;   // 離席ラインを初期化
+  if(S.awayClearTimer){ clearTimeout(S.awayClearTimer); S.awayClearTimer=null; }
   if(S.chatBox) S.chatBox.classList.remove('moving');
   const cpb=pq('#capPauseBtn'); if(cpb){ cpb.classList.remove('active'); cpb.innerHTML='&#10073;&#10073;'; }
   updateBellBtn();
@@ -2611,6 +2718,9 @@ renderTabs(); renderChat();
 
 // 一覧モードはサイズが変わったら詰め直す
 window.addEventListener('resize', ()=>{ if(S.view.mode==='all' && S.view.allMode==='everyone') renderChat(); });
+
+// このサイトの操作を見張る（離席ライン用）
+attachActivity(document);
 
 // バージョン表示
 document.querySelectorAll('.ver-tag').forEach(n=>{ n.textContent = 'v'+VERSION+' 伸'; });
