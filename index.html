@@ -610,6 +610,7 @@ const CFG = {
   GRID_W: 64, GRID_H: 16,
   DETECT_MAX_W: 1400, // 検出はこの横幅まで縮小して行う（重さ対策／切り抜きは元解像度）
   PAIR_GAP_CHARS: 1.0, // 名前とチャットの縦の隙間の上限（文字＝行の高さの倍率）。超えたら別物として弾く
+  ROW_CENTER_TOL: 0.45,// 1行内の白文字の縦中心のズレ許容（行高の倍率）。超えたら横一列でない＝除外
   NAME_SIG_DIFF: 0.20, // 名前一致のしきい値（=一致度80%以上で同一とみなす）
   NEW_PCT: 65,         // 一致度がこれ以下→新規（通知音）
   REPLACE_PCT: 70,     // NEW_PCT超〜これ以下→新規にせず前の画像を静かに差し替え
@@ -622,7 +623,7 @@ const CFG = {
 };
 
 /* ---- バージョン（新コードごとに +0.1）---- */
-const VERSION = '2.7';
+const VERSION = '2.8';
 
 /* ---- 状態 ---- */
 const S = {
@@ -1010,11 +1011,29 @@ function measureLineThickness(srcCanvas, box){
   const half = area/Math.max(1,bnd);     // ≒ ストローク半幅(px)
   return half / h;                       // 高さ正規化（フォント大小の影響を除く・縮小でも不変）
 }
+// 白文字の各文字の「縦中心」を出し、横一列に揃っているか（揃ってなければ2行混在等→除外）
+function isHorizontalRow(srcCanvas, box){
+  const x=Math.max(0,Math.round(box.x)), y=Math.max(0,Math.round(box.y));
+  const w=Math.min(srcCanvas.width-x,Math.round(box.w)), h=Math.min(srcCanvas.height-y,Math.round(box.h));
+  if(w<3||h<3) return true;
+  const ctx=srcCanvas.getContext('2d',{willReadFrequently:true});
+  const d=ctx.getImageData(x,y,w,h).data;
+  const wm=new Uint8Array(w*h);
+  const MIN=CFG.WHITE_MIN-26, SP=CFG.WHITE_SPREAD+12;
+  for(let i=0,p=0;i<d.length;i+=4,p++){ const r=d[i],g=d[i+1],b=d[i+2]; const mx=r>g?(r>b?r:b):(g>b?g:b), mn=r<g?(r<b?r:b):(g<b?g:b); if(mn>=MIN&&(mx-mn)<=SP) wm[p]=1; }
+  const comps = components(wm, w, h).filter(c=> c.h >= h*0.4 && c.w>=2);   // 主要な文字だけ
+  if(comps.length<=1) return true;
+  let mn=1e9, mx=-1;
+  for(const c of comps){ const cy=c.y+c.h/2; if(cy<mn)mn=cy; if(cy>mx)mx=cy; }   // 各文字の縦中心
+  return (mx-mn) <= h*(CFG.ROW_CENTER_TOL || 0.45);                          // 中心が横一列に揃っている
+}
 function recognizeStructure(srcCanvas, w, h){
-  const boxes = detectAllLinesScaled(srcCanvas, w, h);
+  const allBoxes = detectAllLinesScaled(srcCanvas, w, h);
+  const boxes=[], rejectedRows=[];
+  for(const b of allBoxes){ if(isHorizontalRow(srcCanvas, b)) boxes.push(b); else rejectedRows.push(b); }  // 中心がズレた行は除外
   const items=[];
   for(const b of boxes){ const th=measureLineThickness(srcCanvas, b); if(th!=null) items.push({ box:b, th }); }
-  if(!items.length) return { items:[], cards:[], splitVal:null, nameGrp:0, chatGrp:1 };
+  if(!items.length) return { items:[], cards:[], splitVal:null, nameGrp:0, chatGrp:1, rejectedRows };
   // 太さで2グループ（正規化太さの最大ギャップで分割）
   let splitVal=null;
   if(items.length>=2){
@@ -1056,7 +1075,7 @@ function recognizeStructure(srcCanvas, w, h){
     if(!chat) continue;                                              // 上に無ければ中断
     cards.push({ match:nm.match, nameBox:nm.box, chatBox:chat.box });
   }
-  return { items, cards, splitVal, nameGrp, chatGrp };
+  return { items, cards, splitVal, nameGrp, chatGrp, rejectedRows };
 }
 
 function cropCanvas(src, box, pad){
@@ -1805,8 +1824,14 @@ function runPhaseInspect(){
     x.strokeRect(cd.nameBox.x*s,cd.nameBox.y*s,cd.nameBox.w*s,cd.nameBox.h*s);
     x.strokeStyle='#5bd6a0'; x.strokeRect(cd.chatBox.x*s,cd.chatBox.y*s,cd.chatBox.w*s,cd.chatBox.h*s);
   });
+  // 中心が横一列でない＝除外した行（赤の破線）
+  if(rec.rejectedRows && rec.rejectedRows.length){
+    x.save(); x.setLineDash([5,4]); x.lineWidth=2; x.strokeStyle='#e2607a';
+    rec.rejectedRows.forEach(b=>{ x.strokeRect(b.x*s,b.y*s,b.w*s,b.h*s); });
+    x.restore();
+  }
   const nameLbl = rec.splitVal==null ? '—' : (rec.nameGrp===0?'細字':'太字');
-  plabel(x, 4, 16, `細=水色 太=橙／名前組=${nameLbl}・桃=登録一致 緑=チャット`, '#cfe0e8');
+  plabel(x, 4, 16, `細=水色 太=橙／名前組=${nameLbl}・桃=登録一致 緑=チャット 赤破線=中心ズレで除外`, '#cfe0e8');
   if(listEl){
     const addGroup=(title, grp, showMatch)=>{
       const lines=rec.items.filter(o=>o.grp===grp).sort((a,b)=>a.box.y-b.box.y);
