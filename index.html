@@ -624,7 +624,7 @@ const CFG = {
 };
 
 /* ---- バージョン（新コードごとに +0.1）---- */
-const VERSION = '2.9';
+const VERSION = '3.1';
 
 /* ---- 状態 ---- */
 const S = {
@@ -1012,11 +1012,12 @@ function measureLineThickness(srcCanvas, box){
   const half = area/Math.max(1,bnd);     // ≒ ストローク半幅(px)
   return half / h;                       // 高さ正規化（フォント大小の影響を除く・縮小でも不変）
 }
-// 1行の妥当性：①白文字の間に広い横の隙間があれば除外（アバター等を跨いだ誤検出）②縦中心が横一列でなければ除外
-function isValidTextRow(srcCanvas, box){
+// 1行を解析：①白文字の間に広い隙間があれば、繋がった2つ以上として「分割」して各セグメントを返す
+//           ②各セグメントの縦中心が横一列でなければ（2行が縦に混在）そのセグメントは除外
+function analyzeRow(srcCanvas, box){
   const x=Math.max(0,Math.round(box.x)), y=Math.max(0,Math.round(box.y));
   const w=Math.min(srcCanvas.width-x,Math.round(box.w)), h=Math.min(srcCanvas.height-y,Math.round(box.h));
-  if(w<3||h<3) return true;
+  if(w<3||h<3) return { valid:[box], rejected:[] };
   const ctx=srcCanvas.getContext('2d',{willReadFrequently:true});
   const d=ctx.getImageData(x,y,w,h).data;
   const wm=new Uint8Array(w*h);
@@ -1026,24 +1027,39 @@ function isValidTextRow(srcCanvas, box){
     for(let xx=0;xx<w;xx++){ const i=(row+xx)*4; const r=d[i],g=d[i+1],b=d[i+2]; const mx=r>g?(r>b?r:b):(g>b?g:b), mn=r<g?(r<b?r:b):(g<b?g:b);
       if(mn>=MIN && (mx-mn)<=SP){ wm[row+xx]=1; colWhite[xx]=1; } }
   }
-  // ① 広い横の隙間（白の無い列が連続）→ 1つの文字列ではない
-  let first=-1,last=-1; for(let c=0;c<w;c++){ if(colWhite[c]){ if(first<0)first=c; last=c; } }
-  if(first<0) return false;
-  let maxGap=0, cur=0;
-  for(let c=first;c<=last;c++){ if(colWhite[c]){ if(cur>maxGap)maxGap=cur; cur=0; } else cur++; }
-  if(cur>maxGap) maxGap=cur;
-  if(maxGap / h > (CFG.GAP_MAX || 0.8)) return false;                       // 文字の間が広すぎ＝除外
-  // ② 縦中心が横一列にそろっているか
-  const comps = components(wm, w, h).filter(c=> c.h >= h*0.4 && c.w>=2);
-  if(comps.length<=1) return true;
-  let mn=1e9, mx=-1;
-  for(const c of comps){ const cy=c.y+c.h/2; if(cy<mn)mn=cy; if(cy>mx)mx=cy; }
-  return (mx-mn) <= h*(CFG.ROW_CENTER_TOL || 0.45);
+  // ① 広い隙間で区間に分割（隙間が行高×GAP_MAX超で切る＝2つの別物として分ける）
+  const gapMax = Math.max(2, Math.round(h*(CFG.GAP_MAX||0.8)));
+  const ranges=[]; let s=-1, lastC=-1;
+  for(let c=0;c<w;c++){
+    if(colWhite[c]){
+      if(s<0) s=c;
+      else if(c-lastC-1 > gapMax){ ranges.push([s,lastC]); s=c; }   // 隙間が広い→ここで分割
+      lastC=c;
+    }
+  }
+  if(s>=0) ranges.push([s,lastC]);
+  if(!ranges.length) return { valid:[], rejected:[] };
+  const comps = components(wm, w, h);
+  const valid=[], rejected=[];
+  for(const [c0,c1] of ranges){
+    const segComps = comps.filter(cp=>{ const ccx=cp.x+cp.w/2; return ccx>=c0 && ccx<=c1; });
+    if(!segComps.length) continue;
+    let minx=1e9,miny=1e9,maxx=-1,maxy=-1;
+    for(const cp of segComps){ if(cp.x<minx)minx=cp.x; if(cp.y<miny)miny=cp.y; if(cp.x+cp.w>maxx)maxx=cp.x+cp.w; if(cp.y+cp.h>maxy)maxy=cp.y+cp.h; }
+    const sub={ x:x+minx, y:y+miny, w:maxx-minx, h:maxy-miny };
+    if(sub.w < CFG.MIN_LINE_W*0.4 || sub.h < CFG.MIN_LINE_H*0.5) continue;   // 小さすぎは捨てる
+    // ② このセグメント内の縦中心が横一列か
+    const main = segComps.filter(cp=> cp.h>=sub.h*0.4 && cp.w>=2);
+    let aligned=true;
+    if(main.length>1){ let mn=1e9,mx=-1; for(const cp of main){ const cy=cp.y+cp.h/2; if(cy<mn)mn=cy; if(cy>mx)mx=cy; } aligned=(mx-mn)<=sub.h*(CFG.ROW_CENTER_TOL||0.45); }
+    (aligned?valid:rejected).push(sub);
+  }
+  return { valid, rejected };
 }
 function recognizeStructure(srcCanvas, w, h){
   const allBoxes = detectAllLinesScaled(srcCanvas, w, h);
   const boxes=[], rejectedRows=[];
-  for(const b of allBoxes){ if(isValidTextRow(srcCanvas, b)) boxes.push(b); else rejectedRows.push(b); }  // 広い隙間/中心ズレは除外
+  for(const b of allBoxes){ const a=analyzeRow(srcCanvas, b); a.valid.forEach(v=>boxes.push(v)); a.rejected.forEach(r=>rejectedRows.push(r)); } // 広い隙間は分割／中心ズレは除外
   const items=[];
   for(const b of boxes){ const th=measureLineThickness(srcCanvas, b); if(th!=null) items.push({ box:b, th }); }
   if(!items.length) return { items:[], cards:[], splitVal:null, nameGrp:0, chatGrp:1, rejectedRows };
@@ -1057,7 +1073,7 @@ function recognizeStructure(srcCanvas, w, h){
   }
   items.forEach(o=>{ o.grp = (splitVal==null)?0:(o.th<=splitVal?0:1); });   // 0=細, 1=太
   // 各行を登録名と照合
-  items.forEach(o=>{ o.crop=cropCanvas(srcCanvas, o.box, CFG.CROP_PAD); o.match=matchInfo(o.crop); o.hit=!!o.match.via; });
+  items.forEach(o=>{ o.box=tightenBox(srcCanvas, o.box); o.crop=cropCanvas(srcCanvas, o.box, CFG.CROP_PAD); o.match=matchInfo(o.crop); o.hit=!!o.match.via; });
   // 名前組＝一致した行が多く属する組（無ければ細い方を仮定＝表示用）
   const matched=items.filter(o=>o.hit);
   let nameGrp=0;
@@ -1102,6 +1118,33 @@ function cropCanvas(src, box, pad){
   c.getContext('2d').drawImage(src, x, y, w, h, 0, 0, w, h);
   return c;
 }
+
+// 枠を白文字の濃い範囲までピッタリ詰める（左右両端の余白・膨張ぶん・フキダシ端を落とす）
+function tightenBox(src, box){
+  const x=Math.max(0,Math.round(box.x)), y=Math.max(0,Math.round(box.y));
+  const w=Math.min(src.width-x,Math.round(box.w)), h=Math.min(src.height-y,Math.round(box.h));
+  if(w<3||h<3) return box;
+  const d=src.getContext('2d',{willReadFrequently:true}).getImageData(x,y,w,h).data;
+  const colC=new Int32Array(w), rowC=new Int32Array(h);
+  const MIN=CFG.WHITE_MIN-26, SP=CFG.WHITE_SPREAD+12;
+  let total=0;
+  for(let yy=0;yy<h;yy++){ const row=yy*w;
+    for(let xx=0;xx<w;xx++){ const i=(row+xx)*4; const r=d[i],g=d[i+1],b=d[i+2]; const mx=r>g?(r>b?r:b):(g>b?g:b), mn=r<g?(r<b?r:b):(g<b?g:b);
+      if(mn>=MIN && (mx-mn)<=SP){ colC[xx]++; rowC[yy]++; total++; } }
+  }
+  if(total<4) return box;
+  const colThr=Math.max(1, Math.round(h*0.05));   // この数より白の少ない列は余白とみなす
+  const rowThr=Math.max(1, Math.round(w*0.02));
+  let x0=0; while(x0<w && colC[x0]<colThr) x0++;
+  let x1=w-1; while(x1>x0 && colC[x1]<colThr) x1--;
+  let y0=0; while(y0<h && rowC[y0]<rowThr) y0++;
+  let y1=h-1; while(y1>y0 && rowC[y1]<rowThr) y1--;
+  if(x1<=x0 || y1<=y0) return box;
+  return { x:x+x0, y:y+y0, w:x1-x0+1, h:y1-y0+1 };
+}
+// 文字にタイトに切り抜く（cropCanvas + tightenBox）
+function cropTight(src, box, pad){ return cropCanvas(src, tightenBox(src, box), pad); }
+
 
 // 白だけ抽出して内容にタイトに切り抜いた canvas(白文字on黒)。無ければ null
 function maskCanvas(src){
@@ -1584,7 +1627,7 @@ async function selectNameAt(nat){
     }
   }
   if(!best){ toast('白文字が見つかりませんでした'); return; }
-  const crop = cropCanvas(cap.canvas, best, CFG.CROP_PAD);
+  const crop = cropTight(cap.canvas, best, CFG.CROP_PAD);
   openNameDialog(crop, '', signature(crop));
 }
 
@@ -1624,7 +1667,7 @@ async function buildCandidates(){
     list.innerHTML='';
     let shown=0;
     for(const box of names){
-      const crop = cropCanvas(cap.canvas, box, CFG.CROP_PAD);
+      const crop = cropTight(cap.canvas, box, CFG.CROP_PAD);
       const sig = signature(crop); if(!sig) continue;
       // 保存済み/今いる人と照合（結果を必ず表示して、照合が動いていることが分かるように）
       const info = matchInfo(crop);
@@ -1739,7 +1782,7 @@ async function scanRoomMembers(){
     }
     for(const b of rows){
       const abs={ x:rx+b.x, y:ry+b.y, w:b.w, h:b.h };   // 白文字だけ・絶対座標
-      const crop=cropCanvas(cap.canvas, abs, CFG.CROP_PAD);
+      const crop=cropTight(cap.canvas, abs, CFG.CROP_PAD);
       const sig=signature(crop); if(!sig) continue;
       // 保存済み/今いる人と照合（結果を表示）
       const info = matchInfo(crop);
@@ -1844,7 +1887,7 @@ function runPhaseInspect(){
     x.restore();
   }
   const nameLbl = rec.splitVal==null ? '—' : (rec.nameGrp===0?'細字':'太字');
-  plabel(x, 4, 16, `細=水色 太=橙／名前組=${nameLbl}・桃=登録一致 緑=チャット 赤破線=隙間広い/中心ズレで除外`, '#cfe0e8');
+  plabel(x, 4, 16, `細=水色 太=橙／名前組=${nameLbl}・桃=登録一致 緑=チャット 赤破線=中心ズレ除外（広い隙間は分割済）`, '#cfe0e8');
   if(listEl){
     const addGroup=(title, grp, showMatch)=>{
       const lines=rec.items.filter(o=>o.grp===grp).sort((a,b)=>a.box.y-b.box.y);
