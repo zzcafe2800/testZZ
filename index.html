@@ -192,7 +192,7 @@ details.cfg>summary::before{content:"⚙ ";opacity:.7}
 @keyframes pop{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
 .ce-head{display:flex;align-items:baseline;gap:9px}
 .ce-name{font-weight:800;font-size:calc(.92rem*var(--ce-scale));color:var(--ce-color,var(--water-deep))}
-.ce-name-img{height:calc(1.05rem*var(--ce-scale));width:auto;max-width:60%;object-fit:contain;display:block}
+.ce-name-img{height:calc(1.2rem*var(--ce-scale));width:auto;max-width:72%;object-fit:contain;display:block}
 .ce-idle{font-size:calc(.78rem*var(--ce-scale));color:var(--ink-soft);opacity:.4;font-weight:700;padding:calc(2px*var(--ce-scale)) 0}
 .ce.idle{opacity:.82}
 .ce-time{font-size:calc(.7rem*var(--ce-scale));color:var(--ink-soft);white-space:nowrap;font-variant-numeric:tabular-nums}
@@ -622,7 +622,7 @@ const CFG = {
 };
 
 /* ---- バージョン（新コードごとに +0.1）---- */
-const VERSION = '2.6';
+const VERSION = '2.7';
 
 /* ---- 状態 ---- */
 const S = {
@@ -1289,27 +1289,32 @@ function matchInfo(nameCrop){
   return { via:null, pct: libPct, refImg: libImg, libImg, libPct };   // 不一致でも最も近い%は出す
 }
 async function promoteFromLibrary(e, ctx){
-  // 既に同じライブラリID、または十分一致(=同じ名前)の登録プレイヤーが居れば使い回す（二重追加を防ぐ）
+  const pct = d => Math.max(0, Math.round((1-d)*100));
+  // 既にこのライブラリ項目→プレイヤーが決まっていれば黙って使う（毎フレームのログ連発を防ぐ）
   let ex = S.players.find(p=>p.libId===e.id);
-  if(!ex && e.sig){
-    let bd=1e9, be=null;
-    for(const p of S.players){ if(!p.nameSig) continue; const d=sigDiff(e.sig,p.nameSig); if(d<bd){ bd=d; be=p; } }
-    if(be && bd<=CFG.NAME_SIG_DIFF) ex=be;
-  }
+  if(!ex && e._aliasOf){ ex = S.players.find(p=>p.name===e._aliasOf) || null; }
   if(ex) return ex;
+  // ★ 第2段：この名前画像を「今ある登録プレイヤー全員」と比較し、最も近い人を出す
+  let near=null, nd=1e9;
+  if(e.sig){ for(const p of S.players){ if(!p.nameSig) continue; const d=sigDiff(e.sig,p.nameSig); if(d<nd){ nd=d; near=p; } } }
+  const nearPct = near?pct(nd):null;
+  // 一番近い人が一致しきい値(=80%)以上 → 同じ名前として新規登録を却下し、その人を使う
+  if(near && nd<=CFG.NAME_SIG_DIFF){
+    e._aliasOf = near.name;                                  // 以後この項目は near 扱い（再ログ防止）
+    pushRegLog({ newImg:(ctx&&ctx.detectedImg)||e.img, playerImg: near.nameDisp||near.nameImg, playerPct: nearPct,
+                 libImg:e.img, libPct:(ctx&&ctx.pct!=null)?ctx.pct:null, decision:'reject', ts:Date.now() });
+    return near;
+  }
+  // 新規（自動登録）
   const color = pickColor();
   const nameDisp = await tintDataURL(e.img, color);
   const p = { name:'P'+(++_playerSeq), libId:e.id, color, nameSig:e.sig, nameImg:e.img, nameDisp,
               lastChatSig:null, lastChatImg:null, present:false };
   S.players.push(p);
   renderPlayerList(); renderTabs(); updatePresent();
-  // 自動登録も照合ログに残す（手動の「はい」を押していなくても記録）
-  pushRegLog({
-    newImg: (ctx && ctx.detectedImg) || e.img,
-    playerImg: null, playerPct: null,
-    libImg: e.img, libPct: (ctx && ctx.pct!=null) ? ctx.pct : null,
-    decision: 'auto', ts: Date.now()
-  });
+  // 自動登録も照合ログに残す（右に「最も近い登録者と何%」も表示）
+  pushRegLog({ newImg:(ctx&&ctx.detectedImg)||e.img, playerImg: near?(near.nameDisp||near.nameImg):null, playerPct: nearPct,
+               libImg:e.img, libPct:(ctx&&ctx.pct!=null)?ctx.pct:null, decision:'auto', ts:Date.now() });
   return p;
 }
 
@@ -2013,6 +2018,11 @@ function hexToRgb(hex){
   const n = parseInt(hex.slice(1),16);
   return { r:(n>>16)&255, g:(n>>8)&255, b:n&255 };
 }
+// プレイヤー色を名前表示用に濃くする（明るい背景でも読めるように）
+function darkenRgb(hex, f){
+  const n = parseInt(hex.slice(1),16);
+  return { r:Math.round(((n>>16)&255)*f), g:Math.round(((n>>8)&255)*f), b:Math.round((n&255)*f) };
+}
 // 白文字だけ残して任意色に着色＋背景透明＋余白詰め
 // 白文字だけ残して任意色に着色＋背景透明＋余白詰め
 function tintWhite(srcCanvas, rgb){
@@ -2049,7 +2059,7 @@ function tintWhite(srcCanvas, rgb){
   return cc.toDataURL();
 }
 function processChatImage(srcCanvas){ return tintWhite(srcCanvas, INK); }       // チャット＝濃色
-function tintName(srcCanvas, hex){ return tintWhite(srcCanvas, hexToRgb(hex)); } // 名前＝プレイヤー色
+function tintName(srcCanvas, hex){ return tintWhite(srcCanvas, darkenRgb(hex, 0.58)); } // 名前＝プレイヤー色（濃いめ・読みやすく）
 
 /* ---- 時刻表記 ---- */
 function timeAgo(ts){
@@ -2408,7 +2418,8 @@ function renderRegLog(){
   box.innerHTML='';
   for(const r of S.regLog){
     const tag = r.decision==='dup' ? {cls:'same', txt:'重複でスキップ'}
-              : r.decision==='auto' ? {cls:'rep', txt:'自動登録（保存画像）'}
+              : r.decision==='reject' ? {cls:'same', txt:'却下（登録済みと一致）'}
+              : r.decision==='auto' ? {cls:'rep', txt:'自動登録'}
               : {cls:'new', txt:'追加した'};
     const pCell = r.playerImg
       ? `<div class="rl-cell"><label>最も近い登録者 ${r.playerPct}%</label><div class="cmp-pic"><img src="${r.playerImg}"></div></div>`
