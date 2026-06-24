@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -343,6 +342,8 @@ details.dbg>summary::before{content:"🔍 ";opacity:.8}
 .cmp-none{color:#6b8893;font-size:.74rem}
 .cmp-arrow{color:var(--ink-soft);font-weight:800;font-size:1.1rem;padding:0 2px}
 .cmp-when{margin-left:auto;align-self:center;font-size:.74rem;font-weight:700;color:var(--ink-soft);white-space:nowrap;font-variant-numeric:tabular-nums}
+.rl-cell{display:flex;flex-direction:column;gap:5px}
+.rl-cell label{font-size:.68rem;color:var(--ink-soft);font-weight:700}
 
 /* preview overlay controls */
 .pv-canvas-wrap{position:relative;line-height:0}
@@ -443,8 +444,8 @@ details.dbg>summary::before{content:"🔍 ";opacity:.8}
       <summary>調整</summary>
       <div class="cfg-body">
         <div class="cfg-row">
-          <label>取得間隔 <span class="val" id="vInterval">11.5秒</span></label>
-          <input type="range" id="cInterval" min="3" max="15" step="0.5" value="11.5">
+          <label>取得間隔 <span class="val" id="vInterval">3.0秒</span></label>
+          <input type="range" id="cInterval" min="3" max="15" step="0.5" value="3">
         </div>
         <div class="cfg-row">
           <label>新規ライン（一致度%） <span class="val" id="vNew">65%</span></label>
@@ -457,13 +458,13 @@ details.dbg>summary::before{content:"🔍 ";opacity:.8}
           <span style="font-size:.72rem;color:var(--ink-soft)">新規ライン超〜これ以下なら、新規にせず前の画像を静かに差し替え。</span>
         </div>
         <div class="cfg-row">
-          <label>名前の一致しきい値 <span class="val" id="vName">0.140</span></label>
-          <input type="range" id="cName" min="0.04" max="0.18" step="0.005" value="0.14">
+          <label>名前の一致しきい値 <span class="val" id="vName">0.180</span></label>
+          <input type="range" id="cName" min="0.04" max="0.24" step="0.005" value="0.18">
           <span style="font-size:.72rem;color:var(--ink-soft)">小さいほど厳しめ。誤リンクするなら下げる。</span>
         </div>
         <div class="cfg-row">
-          <label>文字の連結幅(検出) <span class="val" id="vDilate">21px</span></label>
-          <input type="range" id="cDilate" min="6" max="26" step="1" value="21">
+          <label>文字の連結幅(検出) <span class="val" id="vDilate">26px</span></label>
+          <input type="range" id="cDilate" min="6" max="32" step="1" value="26">
         </div>
         <div class="cfg-row">
           <label>文字を太くする <span class="val" id="vThick">1px</span></label>
@@ -548,6 +549,14 @@ details.dbg>summary::before{content:"🔍 ";opacity:.8}
         </div>
       </div>
     </details>
+
+    <details class="dbg np" open>
+      <summary>登録の照合ログ（確認用）</summary>
+      <div class="dbg-body">
+        <div class="cmp-note">名前を登録した時、<b>既存の登録プレイヤー</b>と<b>保存画像</b>のどれに何%似ていたか。一致しきい値（<b id="rlThr">0.180</b>）以下なら「重複」として追加しません。同じ人が別人として追加される時は、ここの%を見て<b>「名前の一致しきい値」を上げて</b>ください。</div>
+        <div id="regLogBox"><div class="cmp-empty">まだ登録の照合はありません</div></div>
+      </div>
+    </details>
   </section>
 
 </div>
@@ -572,10 +581,10 @@ const pq = sel => (S.chatBox ? S.chatBox.querySelector(sel) : document.querySele
 
 /* ---- 調整可能パラメータ ---- */
 const CFG = {
-  INTERVAL: 11500,     // 取得間隔(ms)
+  INTERVAL: 3000,      // 取得間隔(ms)
   WHITE_MIN: 168,      // 白文字とみなす各チャンネル最小値
   WHITE_SPREAD: 46,    // 各チャンネルの最大-最小(色付き=絵文字を除外)
-  DILATE_X: 21,        // 横方向の膨張(1行に文字をまとめる)
+  DILATE_X: 26,        // 横方向の膨張(1行に文字をまとめる)
   MIN_LINE_W: 14,
   MIN_LINE_H: 9,
   MAX_LINE_H: 58,      // これより高い塊は2行重なり等とみなしスキップ
@@ -587,7 +596,7 @@ const CFG = {
   GRID_W: 64, GRID_H: 16,
   DETECT_MAX_W: 1400, // 検出はこの横幅まで縮小して行う（重さ対策／切り抜きは元解像度）
   PAIR_GAP_CHARS: 1.0, // 名前とチャットの縦の隙間の上限（文字＝行の高さの倍率）。超えたら別物として弾く
-  NAME_SIG_DIFF: 0.14, // 名前一致のしきい値
+  NAME_SIG_DIFF: 0.18, // 名前一致のしきい値
   NEW_PCT: 65,         // 一致度がこれ以下→新規（通知音）
   REPLACE_PCT: 70,     // NEW_PCT超〜これ以下→新規にせず前の画像を静かに差し替え
   BIG_LINE_RATIO: 1.45,// 基準行高のこの倍より高い行は日付時刻ブロック等として除外
@@ -599,7 +608,7 @@ const CFG = {
 };
 
 /* ---- バージョン（新コードごとに +0.1）---- */
-const VERSION = '2.3';
+const VERSION = '2.4';
 
 /* ---- 状態 ---- */
 const S = {
@@ -632,6 +641,7 @@ const S = {
   _chipAnim:0,
   shareDir:null,
   timeline:[],
+  regLog:[],             // 登録時の名前画像照合ログ（検出ビューの下に表示）
   // 離席ライン（このサイトを操作していない間に来たコメントの目印）
   lastActivity:Date.now(), away:false, awayPointTs:null, awayClearTimer:null,
   capturePaused:false,
@@ -1248,7 +1258,13 @@ function matchInfo(nameCrop){
   return { via:null, pct: libPct, refImg: libImg, libImg, libPct };   // 不一致でも最も近い%は出す
 }
 async function promoteFromLibrary(e){
-  const ex = S.players.find(p=>p.libId===e.id);
+  // 既に同じライブラリID、または同じ名前画像の登録プレイヤーが居れば使い回す（二重追加を防ぐ）
+  let ex = S.players.find(p=>p.libId===e.id);
+  if(!ex && e.sig){
+    let bd=1e9, be=null;
+    for(const p of S.players){ if(!p.nameSig) continue; const d=sigDiff(e.sig,p.nameSig); if(d<bd){ bd=d; be=p; } }
+    if(be && bd<=CFG.NAME_SIG_DIFF) ex=be;
+  }
   if(ex) return ex;
   const color = pickColor();
   const nameDisp = await tintDataURL(e.img, color);
@@ -1819,22 +1835,32 @@ function pickColor(){
 }
 
 let _playerSeq = 0;
-// 「はい」で確定 → 既に同じ名前画像の登録プレイヤーが居なければ追加（重複登録を防ぐ）
+// 「はい」で確定 → 既存と照合してログに残し、同名の登録プレイヤーが居なければ追加
 function addPlayer(nameCropCanvas){
   const sig = signature(nameCropCanvas);
-  // ① 登録プレイヤーの中に同じ名前画像の人が居れば追加しない
-  if(sig){
-    let bd=1e9; for(const p of S.players){ if(!p.nameSig) continue; const d=sigDiff(sig,p.nameSig); if(d<bd) bd=d; }
-    if(bd <= CFG.NAME_SIG_DIFF){ toast('同じ名前の人はすでに登録済みです'); return; }
-  }
+  const newImg = nameCropCanvas.toDataURL();
+  const pct = d => Math.max(0, Math.round((1-d)*100));
+  // 既存プレイヤー／保存ライブラリで最も近いもの
+  let pB=null, pd=1e9; if(sig) for(const p of S.players){ if(!p.nameSig) continue; const d=sigDiff(sig,p.nameSig); if(d<pd){ pd=d; pB=p; } }
+  let lB=null, ld=1e9; if(sig) for(const e of S.library){ if(!e.sig) continue; const d=sigDiff(sig,e.sig); if(d<ld){ ld=d; lB=e; } }
+  const dup = !!(pB && sig && pd <= CFG.NAME_SIG_DIFF);
+  // 照合ログ（検出ビューの下に表示）
+  S.regLog.unshift({
+    newImg,
+    playerImg: pB ? (pB.nameDisp||pB.nameImg) : null, playerPct: pB?pct(pd):null, thr: CFG.NAME_SIG_DIFF,
+    libImg: lB?lB.img:null, libPct: lB?pct(ld):null,
+    decision: dup ? 'dup' : 'add', ts: Date.now()
+  });
+  while(S.regLog.length>14) S.regLog.pop();
+  renderRegLog();
+  // ① 同じ名前の登録プレイヤーが居れば追加しない
+  if(dup){ toast('同じ名前の人はすでに登録済みです（照合ログ参照）'); return; }
   // ② 保存ライブラリに同じ画像があれば使い回す（重複保存しない）
-  let id=null;
-  if(sig){ let bd=1e9, be=null; for(const e of S.library){ if(!e.sig) continue; const d=sigDiff(sig,e.sig); if(d<bd){ bd=d; be=e; } } if(be && bd<=CFG.LIB_DIFF) id=be.id; }
-  const img = nameCropCanvas.toDataURL();
-  if(!id){ id=libNewId(); S.library.push({ id, img, sig }); saveLibrary(); }
+  let id = (lB && sig && ld<=CFG.LIB_DIFF) ? lB.id : null;
+  if(!id){ id=libNewId(); S.library.push({ id, img:newImg, sig }); saveLibrary(); }
   const color = pickColor();
   const nameDisp = tintName(nameCropCanvas, color);
-  S.players.push({ name:'P'+(++_playerSeq), libId:id, color, nameSig:sig, nameImg:img, nameDisp,
+  S.players.push({ name:'P'+(++_playerSeq), libId:id, color, nameSig:sig, nameImg:newImg, nameDisp,
                    lastChatSig:null, lastChatImg:null, present:false });
   renderPlayerList();
   renderTabs();
@@ -2337,6 +2363,36 @@ function updateStatus(){
     (present.length ? `<br>在室：${present.map(escapeHtml).join('、')}` : '');
 }
 
+/* 登録の照合ログ：登録時に「新しい名前画像 vs 既存プレイヤー/保存画像」と一致% */
+function renderRegLog(){
+  const box = el('regLogBox');
+  if(!box) return;
+  const tl = el('rlThr'); if(tl) tl.textContent = CFG.NAME_SIG_DIFF.toFixed(3);
+  if(!S.regLog.length){ box.innerHTML='<div class="cmp-empty">まだ登録の照合はありません</div>'; return; }
+  box.innerHTML='';
+  for(const r of S.regLog){
+    const dup = r.decision==='dup';
+    const pCell = r.playerImg
+      ? `<div class="rl-cell"><label>最も近い登録者 ${r.playerPct}%</label><div class="cmp-pic"><img src="${r.playerImg}"></div></div>`
+      : `<div class="rl-cell"><label>登録者</label><div class="cmp-pic"><span class="cmp-none">なし</span></div></div>`;
+    const lCell = r.libImg
+      ? `<div class="rl-cell"><label>最も近い保存 ${r.libPct}%</label><div class="cmp-pic"><img src="${r.libImg}"></div></div>`
+      : `<div class="rl-cell"><label>保存</label><div class="cmp-pic"><span class="cmp-none">なし</span></div></div>`;
+    const row=document.createElement('div'); row.className='cmp-row np-in';
+    row.innerHTML = `
+      <div class="cmp-head">
+        <span class="cmp-name">登録 ${new Date(r.ts).toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit',hour12:false})}</span>
+        <span class="cmp-tag ${dup?'same':'new'}">${dup?'重複でスキップ':'追加した'}</span>
+      </div>
+      <div class="cmp-imgs">
+        <div class="rl-cell"><label>登録した画像</label><div class="cmp-pic"><img src="${r.newImg}"></div></div>
+        <div class="cmp-arrow">vs</div>
+        ${pCell}${lCell}
+      </div>`;
+    box.appendChild(row);
+  }
+}
+
 /* 開発ビュー：各人の「前回(比較対象) vs 今回」＋一致度% */
 function renderCompare(){
   const box = el('compareBox');
@@ -2570,7 +2626,7 @@ function goRun(){
   if(S.chatBox) S.chatBox.classList.remove('moving');
   const cpb=pq('#capPauseBtn'); if(cpb){ cpb.classList.remove('active'); cpb.innerHTML='&#10073;&#10073;'; }
   updateBellBtn();
-  renderTabs(); renderChat(); updatePresent(); updateTimes();
+  renderTabs(); renderChat(); updatePresent(); updateTimes(); renderRegLog();
   syncCfg();
   el('statusLine').textContent='取得を開始しました…';
   processFrame();
@@ -2786,6 +2842,7 @@ function syncCfg(){
   el('vNew').textContent = CFG.NEW_PCT+'%';
   el('vRep').textContent = CFG.REPLACE_PCT+'%';
   el('vName').textContent = CFG.NAME_SIG_DIFF.toFixed(3);
+  const _rlThr=el('rlThr'); if(_rlThr) _rlThr.textContent = CFG.NAME_SIG_DIFF.toFixed(3);
   el('vDilate').textContent = CFG.DILATE_X+'px';
   el('vThick').textContent = CFG.THICKEN+'px';
   el('vLib').textContent = CFG.LIB_DIFF.toFixed(2);
