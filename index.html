@@ -160,10 +160,12 @@ details.cfg>summary::before{content:"⚙ ";opacity:.7}
 .cp-chip.center.active{box-shadow:0 3px 13px rgba(40,80,95,.32)}
 .cp-chip img{height:18px;width:auto;max-width:130px;object-fit:contain;display:block;vertical-align:middle}
 .cp-chip.center img{height:22px;max-width:160px}
-@keyframes chipInR{from{transform:translateX(20px) scale(.82);opacity:0}to{transform:none;opacity:1}}
-@keyframes chipInL{from{transform:translateX(-20px) scale(.82);opacity:0}to{transform:none;opacity:1}}
-.cp-chips.anim-next .cp-chip{animation:chipInR .2s ease}
-.cp-chips.anim-prev .cp-chip{animation:chipInL .2s ease}
+@keyframes chipInR{0%{transform:translateX(48px) scale(.68);opacity:0}55%{opacity:1}100%{transform:none;opacity:1}}
+@keyframes chipInL{0%{transform:translateX(-48px) scale(.68);opacity:0}55%{opacity:1}100%{transform:none;opacity:1}}
+.cp-chips.anim-next .cp-chip{animation:chipInR .34s cubic-bezier(.34,1.42,.5,1)}
+.cp-chips.anim-prev .cp-chip{animation:chipInL .34s cubic-bezier(.34,1.42,.5,1)}
+.cp-chips.anim-next .cp-chip.center,.cp-chips.anim-prev .cp-chip.center{animation-duration:.42s}
+.cp-chips.anim-next .cp-chip.side,.cp-chips.anim-prev .cp-chip.side{animation-duration:.28s;opacity:.6}
 
 .cp-log{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;padding:8px 10px 10px;display:flex;flex-direction:column;gap:9px;
   scrollbar-width:thin;margin:0 10px 8px;border:2px solid var(--mode-color,transparent);border-radius:13px;
@@ -331,6 +333,7 @@ details.dbg>summary::before{content:"🔍 ";opacity:.8}
 .cmp-pic img{display:block;max-width:240px;height:auto}
 .cmp-none{color:#6b8893;font-size:.74rem}
 .cmp-arrow{color:var(--ink-soft);font-weight:800;font-size:1.1rem;padding:0 2px}
+.cmp-when{margin-left:auto;align-self:center;font-size:.74rem;font-weight:700;color:var(--ink-soft);white-space:nowrap;font-variant-numeric:tabular-nums}
 
 /* preview overlay controls */
 .pv-canvas-wrap{position:relative;line-height:0}
@@ -527,6 +530,7 @@ details.dbg>summary::before{content:"🔍 ";opacity:.8}
     <details class="dbg np">
       <summary>検出ビュー（確認用）</summary>
       <div class="dbg-body">
+        <button id="runInspectBtn" class="btn ghost" style="margin-bottom:10px">🔬 いま検査する（3フェーズ）</button>
         <canvas id="debugCanvas"></canvas>
         <div class="dbg-legend">
           <span class="lg-chat">チャット行</span>
@@ -889,7 +893,12 @@ function detectCapsules(srcCanvas, w, h){
     const by=Math.min(...group.map(g=>g.y));
     const bx2=Math.max(...group.map(g=>g.x+g.w));
     const by2=Math.max(...group.map(g=>g.y+g.h));
-    const box={ x:bx, y:by, w:bx2-bx, h:by2-by };
+    // 文字ピッタリではなく、フキダシの地まで枠を広げる（実測：名前行≒30px・カプセル≒60px → 行高さ基準で外側へ）
+    const lineH = group.reduce((s,g)=>s+g.h,0)/group.length;
+    const padX = Math.round(lineH*0.6), padY = Math.round(lineH*0.35);
+    const x0=Math.max(0,bx-padX), y0=Math.max(0,by-padY);
+    const x1=Math.min(w,bx2+padX), y1=Math.min(h,by2+padY);
+    const box={ x:x0, y:y0, w:x1-x0, h:y1-y0 };
     const thick = group.length>=2;
     const nameBox = group[group.length-1];                          // Step3：一番下=名前
     const chatBox = thick ? unionBoxes(group.slice(0,-1)) : null;    // 上=チャット
@@ -1112,9 +1121,10 @@ function matchInfo(nameCrop){
   for(const p of S.players){ if(!p.nameSig) continue; const d=sigDiff(sig,p.nameSig); if(d<sd){ sd=d; sB=p; } }
   let lB=null, ld=1e9;
   for(const e of S.library){ if(!e.sig) continue; const d=sigDiff(sig,e.sig); if(d<ld){ ld=d; lB=e; } }
-  if(sB && sd <= CFG.NAME_SIG_DIFF) return { via:'session', player:sB, pct:pct(sd), refImg: sB.nameImg || (lB?lB.img:null) };
-  if(lB && ld <= CFG.LIB_DIFF)      return { via:'library', lib:lB, pct:pct(ld), refImg: lB.img };
-  return { via:null, pct: lB?pct(ld):null, refImg: lB?lB.img:null };   // 最も近い保存済みとの%（不一致）
+  const libImg = lB?lB.img:null, libPct = lB?pct(ld):null;   // 最も近い保存済み画像と一致%（毎回出す）
+  if(sB && sd <= CFG.NAME_SIG_DIFF) return { via:'session', player:sB, pct:pct(sd), refImg: sB.nameImg||libImg, libImg, libPct };
+  if(lB && ld <= CFG.LIB_DIFF)      return { via:'library', lib:lB, pct:libPct, refImg: libImg, libImg, libPct };
+  return { via:null, pct: libPct, refImg: libImg, libImg, libPct };   // 不一致でも最も近い%は出す
 }
 async function promoteFromLibrary(e){
   const ex = S.players.find(p=>p.libId===e.id);
@@ -1423,9 +1433,11 @@ async function buildCandidates(){
 // 自動で「保存済み/今いる人」と一致した時のコンパクト表示（照合が動いている確認用）
 function renderMatched(cropCanvas, info){
   const it=document.createElement('div'); it.className='pc-matched';
-  const ref = info.refImg ? `<span class="arr">≈</span><div class="mi"><img src="${info.refImg}" alt=""></div>` : '';
+  // 「保存済みのどれと何%一致したか」を必ず出す（次回の参考用）
+  const ref = info.libImg ? `<span class="arr">≈</span><div class="mi"><img src="${info.libImg}" alt=""></div>` : '';
   const via = info.via==='session' ? '登録済' : '保存済';
-  it.innerHTML = `<span class="ok">✓</span><div class="mi"><img src="${cropCanvas.toDataURL()}" alt=""></div>${ref}<span class="pct">${via}と一致 ${info.pct}%</span>`;
+  const pctTxt = (info.libPct!=null ? info.libPct : info.pct);
+  it.innerHTML = `<span class="ok">✓</span><div class="mi"><img src="${cropCanvas.toDataURL()}" alt=""></div>${ref}<span class="pct">${via}と一致 ${pctTxt}%</span>`;
   return it;
 }
 function renderCandidate(cropCanvas, info){
@@ -2153,6 +2165,8 @@ function tabScroll(dir){ const c=pq('#cpChips'); if(c) c.scrollBy({left: dir*120
 
 function updateTimes(){
   const ck = pq('#cpClock'); if(ck) ck.textContent = clockStr();
+  const cmp = el('compareBox');
+  if(cmp) cmp.querySelectorAll('.cmp-when').forEach(s=>{ s.textContent = timeAgo(Number(s.dataset.ts)); });
   const log = pq('#cpLog'); if(!log) return;
   log.querySelectorAll('.ce').forEach(e=>{
     const t = e.querySelector('.ce-time');
@@ -2208,6 +2222,7 @@ function renderCompare(){
         <div class="cmp-cell"><label>前回（比較対象）</label><div class="cmp-pic">${prev}</div></div>
         <div class="cmp-arrow">→</div>
         <div class="cmp-cell"><label>今回</label><div class="cmp-pic"><img src="${c.curImg}" alt=""></div></div>
+        <span class="cmp-when" data-ts="${c.at}">${timeAgo(c.at)}</span>
       </div>`;
     box.appendChild(row);
   }
@@ -2686,6 +2701,7 @@ el('zoomResetBtn').addEventListener('click', resetView);
 el('pvCandsRefresh').addEventListener('click', buildCandidates);
 el('pvCandsMembers').addEventListener('click', scanRoomMembers);
 el('pvCandsInspect').addEventListener('click', runPhaseInspect);
+const _rib=el('runInspectBtn'); if(_rib) _rib.addEventListener('click', runPhaseInspect);
 
 el('goBtn').addEventListener('click', goRun);
 el('regBackBtn').addEventListener('click', stopAll);
