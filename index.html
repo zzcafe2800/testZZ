@@ -626,7 +626,7 @@ const CFG = {
 };
 
 /* ---- バージョン（新コードごとに +0.1）---- */
-const VERSION = '3.2';
+const VERSION = '3.3';
 
 /* ---- 状態 ---- */
 const S = {
@@ -1218,16 +1218,24 @@ function chatSignature(src){
   for(let i=0,p=0;i<id.length;i+=4,p++) data[p]=id[i]/255;
   return { w:W, h:H, data };
 }
-// 小さい方の幅にそろえ、共通(=左の文字側)領域だけ比較。末尾の絵文字ぶん(幅増)は軽視
+// 小さい方にそろえて「文字だけ」で比較。末尾の絵文字(幅増)にも、拡大縮小のズレにも強いよう2方式の良い方を採用
 function chatSigDiff(a,b){
   if(!a||!b) return 1;
-  const H=a.h, cw=Math.min(a.w,b.w);
-  if(cw<1) return 1;
-  let s=0;
-  for(let y=0;y<H;y++){ const ra=y*a.w, rb=y*b.w; for(let x=0;x<cw;x++){ const d=a.data[ra+x]-b.data[rb+x]; s+= d<0?-d:d; } }
-  const meanDiff = s/(cw*H);                                   // 共通部分の差
-  const wr = Math.min(a.w,b.w)/Math.max(a.w,b.w);              // 幅の比
-  const match = (1-meanDiff) * Math.pow(wr, CFG.CHAT_W_POW||0.5);  // 幅差は軽いペナルティ
+  const H=a.h;
+  const wr = Math.min(a.w,b.w)/Math.max(a.w,b.w);
+  // A) 末尾無視：小さい方の幅で左そろえ、共通(=文字側)だけ比較
+  const cwA=Math.min(a.w,b.w);
+  let sA=0;
+  for(let y=0;y<H;y++){ const ra=y*a.w, rb=y*b.w; for(let x=0;x<cwA;x++){ const d=a.data[ra+x]-b.data[rb+x]; sA+= d<0?-d:d; } }
+  const matchA = (1 - sA/(cwA*H)) * Math.pow(wr, CFG.CHAT_W_POW||0.5);  // 幅差は軽くペナルティ
+  // B) 幅そろえ：広い方を狭い方の幅へリサンプルして全体比較（同じ文字の拡大縮小差に強い）
+  const small = a.w<=b.w ? a : b, big = a.w<=b.w ? b : a;
+  const W=small.w; let sB=0;
+  for(let y=0;y<H;y++){ const rs=y*small.w, rg=y*big.w;
+    for(let x=0;x<W;x++){ const bx=Math.min(big.w-1, Math.round(x*(big.w-1)/((W-1)||1))); const d=small.data[rs+x]-big.data[rg+bx]; sB+= d<0?-d:d; }
+  }
+  const matchB = 1 - sB/(W*H);
+  const match = Math.max(matchA, matchB);                               // 良い方を採用
   return 1 - Math.max(0, Math.min(1, match));
 }
 
