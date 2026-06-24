@@ -470,8 +470,8 @@ details.dbg>summary::before{content:"🔍 ";opacity:.8}
           <span style="font-size:.72rem;color:var(--ink-soft)">新規ライン超〜これ以下なら、新規にせず前の画像を静かに差し替え。</span>
         </div>
         <div class="cfg-row">
-          <label>名前の一致しきい値 <span class="val" id="vName">0.180</span></label>
-          <input type="range" id="cName" min="0.04" max="0.24" step="0.005" value="0.18">
+          <label>名前の一致しきい値 <span class="val" id="vName">0.200（80%）</span></label>
+          <input type="range" id="cName" min="0.04" max="0.24" step="0.005" value="0.20">
           <span style="font-size:.72rem;color:var(--ink-soft)">小さいほど厳しめ。誤リンクするなら下げる。</span>
         </div>
         <div class="cfg-row">
@@ -566,8 +566,9 @@ details.dbg>summary::before{content:"🔍 ";opacity:.8}
     <details class="dbg np" open>
       <summary>登録の照合ログ（確認用）</summary>
       <div class="dbg-body">
-        <div class="cmp-note">名前を登録した時、<b>既存の登録プレイヤー</b>と<b>保存画像</b>のどれに何%似ていたか。一致しきい値（<b id="rlThr">0.180</b>）以下なら「重複」として追加しません。同じ人が別人として追加される時は、ここの%を見て<b>「名前の一致しきい値」を上げて</b>ください。</div>
+        <div class="cmp-note">名前を登録／自動登録した時、<b>既存の登録プレイヤー</b>や<b>保存画像</b>のどれに何%似ていたか。一致度が<b id="rlThr">80%</b>以上なら「登録済み」とみなして追加しません。記録は端末に保存され、リロードしても残ります。</div>
         <div id="regLogBox"><div class="cmp-empty">まだ登録の照合はありません</div></div>
+        <button id="regLogClear" class="btn ghost" style="margin-top:10px">記録を消す</button>
       </div>
     </details>
   </section>
@@ -609,7 +610,7 @@ const CFG = {
   GRID_W: 64, GRID_H: 16,
   DETECT_MAX_W: 1400, // 検出はこの横幅まで縮小して行う（重さ対策／切り抜きは元解像度）
   PAIR_GAP_CHARS: 1.0, // 名前とチャットの縦の隙間の上限（文字＝行の高さの倍率）。超えたら別物として弾く
-  NAME_SIG_DIFF: 0.18, // 名前一致のしきい値
+  NAME_SIG_DIFF: 0.20, // 名前一致のしきい値（=一致度80%以上で同一とみなす）
   NEW_PCT: 65,         // 一致度がこれ以下→新規（通知音）
   REPLACE_PCT: 70,     // NEW_PCT超〜これ以下→新規にせず前の画像を静かに差し替え
   BIG_LINE_RATIO: 1.45,// 基準行高のこの倍より高い行は日付時刻ブロック等として除外
@@ -621,7 +622,7 @@ const CFG = {
 };
 
 /* ---- バージョン（新コードごとに +0.1）---- */
-const VERSION = '2.5';
+const VERSION = '2.6';
 
 /* ---- 状態 ---- */
 const S = {
@@ -1234,6 +1235,22 @@ function saveLibrary(){
   }catch(e){ console.warn('library save failed (quota?)', e); }
 }
 function libNewId(){ return 'L'+Date.now().toString(36)+Math.floor(Math.random()*1e6).toString(36); }
+
+/* 登録の照合ログ：記録を端末に残す（リロードしても消えない） */
+const REGLOG_KEY = 'minogashi_reglog_v1';
+function loadRegLog(){
+  try{ const raw=localStorage.getItem(REGLOG_KEY); S.regLog = raw ? JSON.parse(raw) : []; }catch(e){ S.regLog = []; }
+}
+function saveRegLog(){
+  try{ localStorage.setItem(REGLOG_KEY, JSON.stringify(S.regLog)); }catch(e){ console.warn('reglog save failed (quota?)', e); }
+}
+function pushRegLog(entry){
+  S.regLog.unshift(entry);
+  while(S.regLog.length>30) S.regLog.pop();
+  saveRegLog();
+  renderRegLog();
+}
+
 // dataURL → 色付き表示画像（透過）
 function tintDataURL(dataURL, hex){
   return new Promise(res=>{
@@ -1254,7 +1271,7 @@ async function resolvePlayer(nameCrop){
   // ② 保存済みライブラリ（厳しめ）→ 一致したら今セッションへ昇格（保存しない）
   let lib=null, ld=1e9;
   for(const e of S.library){ if(!e.sig) continue; const d=sigDiff(sig,e.sig); if(d<ld){ ld=d; lib=e; } }
-  if(lib && ld <= CFG.LIB_DIFF){ return await promoteFromLibrary(lib); }
+  if(lib && ld <= CFG.LIB_DIFF){ return await promoteFromLibrary(lib, { detectedImg: nameCrop.toDataURL(), pct: Math.max(0, Math.round((1-ld)*100)) }); }
   return null;
 }
 // 副作用なしで「保存済み/今いる人と照合した結果」を返す（候補欄に見せる用）
@@ -1271,8 +1288,8 @@ function matchInfo(nameCrop){
   if(lB && ld <= CFG.LIB_DIFF)      return { via:'library', lib:lB, pct:libPct, refImg: libImg, libImg, libPct };
   return { via:null, pct: libPct, refImg: libImg, libImg, libPct };   // 不一致でも最も近い%は出す
 }
-async function promoteFromLibrary(e){
-  // 既に同じライブラリID、または同じ名前画像の登録プレイヤーが居れば使い回す（二重追加を防ぐ）
+async function promoteFromLibrary(e, ctx){
+  // 既に同じライブラリID、または十分一致(=同じ名前)の登録プレイヤーが居れば使い回す（二重追加を防ぐ）
   let ex = S.players.find(p=>p.libId===e.id);
   if(!ex && e.sig){
     let bd=1e9, be=null;
@@ -1286,6 +1303,13 @@ async function promoteFromLibrary(e){
               lastChatSig:null, lastChatImg:null, present:false };
   S.players.push(p);
   renderPlayerList(); renderTabs(); updatePresent();
+  // 自動登録も照合ログに残す（手動の「はい」を押していなくても記録）
+  pushRegLog({
+    newImg: (ctx && ctx.detectedImg) || e.img,
+    playerImg: null, playerPct: null,
+    libImg: e.img, libPct: (ctx && ctx.pct!=null) ? ctx.pct : null,
+    decision: 'auto', ts: Date.now()
+  });
   return p;
 }
 
@@ -1858,15 +1882,13 @@ function addPlayer(nameCropCanvas){
   let pB=null, pd=1e9; if(sig) for(const p of S.players){ if(!p.nameSig) continue; const d=sigDiff(sig,p.nameSig); if(d<pd){ pd=d; pB=p; } }
   let lB=null, ld=1e9; if(sig) for(const e of S.library){ if(!e.sig) continue; const d=sigDiff(sig,e.sig); if(d<ld){ ld=d; lB=e; } }
   const dup = !!(pB && sig && pd <= CFG.NAME_SIG_DIFF);
-  // 照合ログ（検出ビューの下に表示）
-  S.regLog.unshift({
+  // 照合ログ（検出ビューの下に表示・端末に保存）
+  pushRegLog({
     newImg,
-    playerImg: pB ? (pB.nameDisp||pB.nameImg) : null, playerPct: pB?pct(pd):null, thr: CFG.NAME_SIG_DIFF,
+    playerImg: pB ? (pB.nameDisp||pB.nameImg) : null, playerPct: pB?pct(pd):null,
     libImg: lB?lB.img:null, libPct: lB?pct(ld):null,
     decision: dup ? 'dup' : 'add', ts: Date.now()
   });
-  while(S.regLog.length>14) S.regLog.pop();
-  renderRegLog();
   // ① 同じ名前の登録プレイヤーが居れば追加しない
   if(dup){ toast('同じ名前の人はすでに登録済みです（照合ログ参照）'); return; }
   // ② 保存ライブラリに同じ画像があれば使い回す（重複保存しない）
@@ -1928,7 +1950,7 @@ async function processFrame(){
       const nameCrop = cropCanvas(cap.canvas, card.nameBox, CFG.CROP_PAD);
       // プレイヤー解決（セッション内 or 保存から昇格）
       let player = card.match.via==='session' ? card.match.player
-                 : card.match.via==='library' ? await promoteFromLibrary(card.match.lib)
+                 : card.match.via==='library' ? await promoteFromLibrary(card.match.lib, { detectedImg: nameCrop.toDataURL(), pct: card.match.libPct })
                  : await resolvePlayer(nameCrop);
       dbgRows.push({card:{chat:card.chatBox, name:card.nameBox}, name: player ? player.name : ''});
       if(!player) continue;
@@ -2381,30 +2403,36 @@ function updateStatus(){
 function renderRegLog(){
   const box = el('regLogBox');
   if(!box) return;
-  const tl = el('rlThr'); if(tl) tl.textContent = CFG.NAME_SIG_DIFF.toFixed(3);
+  const tl = el('rlThr'); if(tl) tl.textContent = Math.round((1-CFG.NAME_SIG_DIFF)*100) + '%';
   if(!S.regLog.length){ box.innerHTML='<div class="cmp-empty">まだ登録の照合はありません</div>'; return; }
   box.innerHTML='';
   for(const r of S.regLog){
-    const dup = r.decision==='dup';
+    const tag = r.decision==='dup' ? {cls:'same', txt:'重複でスキップ'}
+              : r.decision==='auto' ? {cls:'rep', txt:'自動登録（保存画像）'}
+              : {cls:'new', txt:'追加した'};
     const pCell = r.playerImg
       ? `<div class="rl-cell"><label>最も近い登録者 ${r.playerPct}%</label><div class="cmp-pic"><img src="${r.playerImg}"></div></div>`
-      : `<div class="rl-cell"><label>登録者</label><div class="cmp-pic"><span class="cmp-none">なし</span></div></div>`;
+      : '';
     const lCell = r.libImg
-      ? `<div class="rl-cell"><label>最も近い保存 ${r.libPct}%</label><div class="cmp-pic"><img src="${r.libImg}"></div></div>`
-      : `<div class="rl-cell"><label>保存</label><div class="cmp-pic"><span class="cmp-none">なし</span></div></div>`;
+      ? `<div class="rl-cell"><label>${r.decision==='auto'?'一致した保存':'最も近い保存'} ${r.libPct!=null?r.libPct+'%':'—'}</label><div class="cmp-pic"><img src="${r.libImg}"></div></div>`
+      : '';
     const row=document.createElement('div'); row.className='cmp-row np-in';
     row.innerHTML = `
       <div class="cmp-head">
-        <span class="cmp-name">登録 ${new Date(r.ts).toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit',hour12:false})}</span>
-        <span class="cmp-tag ${dup?'same':'new'}">${dup?'重複でスキップ':'追加した'}</span>
+        <span class="cmp-name">${r.decision==='auto'?'自動':'登録'} ${new Date(r.ts).toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit',hour12:false})}</span>
+        <span class="cmp-tag ${tag.cls}">${tag.txt}</span>
       </div>
       <div class="cmp-imgs">
-        <div class="rl-cell"><label>登録した画像</label><div class="cmp-pic"><img src="${r.newImg}"></div></div>
-        <div class="cmp-arrow">vs</div>
+        <div class="rl-cell"><label>${r.decision==='auto'?'検出/保存の画像':'登録した画像'}</label><div class="cmp-pic"><img src="${r.newImg}"></div></div>
+        ${(pCell||lCell)?'<div class="cmp-arrow">vs</div>':''}
         ${pCell}${lCell}
       </div>`;
     box.appendChild(row);
   }
+}
+function clearRegLog(){
+  if(!confirm('登録の照合ログを全部消しますか？')) return;
+  S.regLog=[]; saveRegLog(); renderRegLog();
 }
 
 /* 開発ビュー：各人の「前回(比較対象) vs 今回」＋一致度% */
@@ -2888,8 +2916,8 @@ function syncCfg(){
   el('vInterval').textContent = (CFG.INTERVAL/1000).toFixed(1)+'秒';
   el('vNew').textContent = CFG.NEW_PCT+'%';
   el('vRep').textContent = CFG.REPLACE_PCT+'%';
-  el('vName').textContent = CFG.NAME_SIG_DIFF.toFixed(3);
-  const _rlThr=el('rlThr'); if(_rlThr) _rlThr.textContent = CFG.NAME_SIG_DIFF.toFixed(3);
+  el('vName').textContent = CFG.NAME_SIG_DIFF.toFixed(3) + '（' + Math.round((1-CFG.NAME_SIG_DIFF)*100) + '%）';
+  const _rlThr=el('rlThr'); if(_rlThr) _rlThr.textContent = Math.round((1-CFG.NAME_SIG_DIFF)*100) + '%';
   el('vDilate').textContent = CFG.DILATE_X+'px';
   el('vThick').textContent = CFG.THICKEN+'px';
   el('vLib').textContent = CFG.LIB_DIFF.toFixed(2);
@@ -2957,6 +2985,7 @@ el('goBtn').addEventListener('click', goRun);
 el('regBackBtn').addEventListener('click', stopAll);
 el('runPipBtn').addEventListener('click', togglePip);
 el('collapseBtn').addEventListener('click', togglePipCollapse);
+const _rlc=el('regLogClear'); if(_rlc) _rlc.addEventListener('click', clearRegLog);
 el('shareBtn').addEventListener('click', enableLanShare);
 el('libBtnRun').addEventListener('click', showLibrary);
 el('libBtnReg').addEventListener('click', showLibrary);
@@ -2995,6 +3024,8 @@ document.querySelectorAll('.ver-tag').forEach(n=>{ n.textContent = 'v'+VERSION+'
 wireCfg();
 syncCfg();
 loadLibrary();
+loadRegLog();
+renderRegLog();
 </script>
 </body>
 </html>
