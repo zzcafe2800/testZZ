@@ -179,6 +179,8 @@ details.cfg>summary::before{content:"⚙ ";opacity:.7}
 .ce-head{display:flex;align-items:baseline;gap:9px}
 .ce-name{font-weight:800;font-size:calc(.92rem*var(--ce-scale));color:var(--ce-color,var(--water-deep))}
 .ce-name-img{height:calc(1.05rem*var(--ce-scale));width:auto;max-width:60%;object-fit:contain;display:block}
+.ce-idle{font-size:calc(.78rem*var(--ce-scale));color:var(--ink-soft);opacity:.4;font-weight:700;padding:calc(2px*var(--ce-scale)) 0}
+.ce.idle{opacity:.82}
 .ce-time{font-size:calc(.7rem*var(--ce-scale));color:var(--ink-soft);white-space:nowrap;font-variant-numeric:tabular-nums}
 .ce-msg{margin-top:calc(6px*var(--ce-scale))}
 .ce-msg img{display:block;max-width:100%;height:auto;max-height:calc(46px*var(--ce-scale));image-rendering:auto}
@@ -567,7 +569,7 @@ const CFG = {
 };
 
 /* ---- バージョン（新コードごとに +0.1）---- */
-const VERSION = '2.2';
+const VERSION = '2.3';
 
 /* ---- 状態 ---- */
 const S = {
@@ -864,23 +866,43 @@ function detectCapsules(srcCanvas, w, h){
       }
     }
     group.sort((a,b)=>a.y-b.y);
+    // チャット・名前は必ず横一列（改行なし）。3行以上＝別人が混ざった誤結合なので捨てる。
+    if(group.length > 2) continue;
     const bx=Math.min(...group.map(g=>g.x));
     const by=Math.min(...group.map(g=>g.y));
     const bx2=Math.max(...group.map(g=>g.x+g.w));
     const by2=Math.max(...group.map(g=>g.y+g.h));
     const box={ x:bx, y:by, w:bx2-bx, h:by2-by };
-    const thick = group.length>=2;
-    const nameBox = group[group.length-1];                          // Step3：一番下=名前
-    const chatBox = thick ? unionBoxes(group.slice(0,-1)) : null;    // 上=チャット
+    const thick = group.length===2;
+    const nameBox = group[group.length-1];                          // Step3：一番下=名前（1行）
+    const chatBox = thick ? group[0] : null;                        // 上=チャット（1行のみ）
     caps.push({ box, lines:group, type: thick?'thick':'thin', nameBox, chatBox });
   }
   return caps;
 }
-function unionBoxes(arr){
-  if(!arr.length) return null;
-  const x=Math.min(...arr.map(b=>b.x)), y=Math.min(...arr.map(b=>b.y));
-  const x2=Math.max(...arr.map(b=>b.x+b.w)), y2=Math.max(...arr.map(b=>b.y+b.h));
-  return { x, y, w:x2-x, h:y2-y };
+// チャット/名前の crop が「横一列（1行）」か。複数行に割れていたら誤り＝弾く
+function isSingleRow(cropCanvas){
+  const w=cropCanvas.width, h=cropCanvas.height;
+  if(h<4) return true;
+  const ctx=cropCanvas.getContext('2d',{willReadFrequently:true});
+  const d=ctx.getImageData(0,0,w,h).data;
+  const need=Math.max(2, Math.round(w*0.03));
+  const rowHas=new Uint8Array(h);
+  for(let y=0;y<h;y++){
+    let c=0; const row=y*w;
+    for(let x=0;x<w;x++){ const i=(row+x)*4; const r=d[i],g=d[i+1],b=d[i+2];
+      const mx=r>g?(r>b?r:b):(g>b?g:b), mn=r<g?(r<b?r:b):(g<b?g:b);
+      if(mn>=CFG.WHITE_MIN-26 && (mx-mn)<=CFG.WHITE_SPREAD+12) c++; }
+    rowHas[y]= c>=need ? 1:0;
+  }
+  // 大きめの隙間で区切って白帯の本数を数える
+  const gapTol=Math.max(2, Math.round(h*0.18));
+  let bands=0, inBand=false, gap=0;
+  for(let y=0;y<h;y++){
+    if(rowHas[y]){ if(!inBand){ bands++; inBand=true; } gap=0; }
+    else if(inBand){ gap++; if(gap>gapTol) inBand=false; }
+  }
+  return bands<=1;
 }
 
 function cropCanvas(src, box, pad){
@@ -1518,15 +1540,51 @@ function ensurePhaseModal(){
   bg.innerHTML=`
     <div class="modal np phase-modal">
       <h3>検査（3フェーズ）</h3>
+      <p style="font-size:.76rem;color:var(--ink-soft);margin:.1rem 0 .5rem">読めていない所を<b>タップ</b>すると、その周辺を調べます（黄=調査範囲／緑=フキダシ内・赤=外）。</p>
       <div class="ph-block"><div class="ph-cap">Step1：明暗からフキダシ(カプセル)だけ抽出</div><canvas id="phase1"></canvas></div>
       <div class="ph-block"><div class="ph-cap">Step2：縦の長さで判定（緑=薄い/名前・橙=厚い/チャット+名前）</div><canvas id="phase2"></canvas></div>
-      <div class="ph-block"><div class="ph-cap">Step3：名前の切り出し（桃=名前。厚いは下半分）</div><canvas id="phase3"></canvas></div>
+      <div class="ph-block"><div class="ph-cap">Step3：名前の切り出し（桃=名前。チャットは上の1行）</div><canvas id="phase3"></canvas></div>
       <button id="phaseClose" class="btn primary" style="width:100%;margin-top:10px">閉じる</button>
     </div>`;
   document.body.appendChild(bg);
   bg.addEventListener('click', ev=>{ if(ev.target===bg) bg.classList.add('hidden'); });
   bg.querySelector('#phaseClose').addEventListener('click', ()=> bg.classList.add('hidden'));
+  ['phase1','phase2','phase3'].forEach(id=>{
+    const c=bg.querySelector('#'+id);
+    c.style.cursor='crosshair';
+    c.addEventListener('click', ev=> investigateAt(c, ev));
+  });
   return bg;
+}
+// 確認画面でクリックした周辺を調査（白文字行・フキダシ判定を重ねて表示）
+function investigateAt(canvas, ev){
+  const cap=S._phaseCap, s=S._phaseScale; if(!cap||!s) return;
+  const rect=canvas.getBoundingClientRect();
+  const ix=(ev.clientX-rect.left)*(canvas.width/rect.width);
+  const iy=(ev.clientY-rect.top)*(canvas.height/rect.height);
+  const fx=ix/s, fy=iy/s;
+  const R=140;
+  const rx=Math.max(0,Math.round(fx-R)), ry=Math.max(0,Math.round(fy-R*0.55));
+  const rw=Math.min(cap.w-rx, R*2), rh=Math.min(cap.h-ry, R*1.1);
+  if(rw<8||rh<8) return;
+  const region=cropCanvas(cap.canvas,{x:rx,y:ry,w:rw,h:rh},0);
+  const rimg=region.getContext('2d',{willReadFrequently:true}).getImageData(0,0,region.width,region.height);
+  const m=whiteMaskArr(rimg,region.width,region.height);
+  const lu=lumaMaskArrs(rimg,region.width,region.height);
+  const dil=dilateXArr(m,region.width,region.height,CFG.DILATE_X);
+  const boxes=components(dil,region.width,region.height)
+    .filter(b=> b.w>=6 && b.h>=Math.max(5,CFG.MIN_LINE_H-3) && b.h<=CFG.MAX_LINE_H*1.5);
+  const ctx=canvas.getContext('2d'); ctx.save();
+  ctx.lineWidth=2; ctx.strokeStyle='#ffd34d';
+  ctx.strokeRect(rx*s,ry*s,rw*s,rh*s);
+  let bubbleN=0;
+  boxes.forEach(b=>{
+    const inB=isInBubble(lu,m,region.width,region.height,b); if(inB) bubbleN++;
+    ctx.strokeStyle= inB ? '#5bd6a0' : '#ff7a7a';
+    ctx.strokeRect((rx+b.x)*s,(ry+b.y)*s,b.w*s,b.h*s);
+  });
+  plabel(ctx, rx*s, Math.max(12,ry*s), '白文字 '+boxes.length+'行 / フキダシ内 '+bubbleN, '#ffd34d');
+  ctx.restore();
 }
 function plabel(ctx,x,y,text,color){
   ctx.font='bold 11px sans-serif';
@@ -1542,6 +1600,7 @@ function runPhaseInspect(){
   const caps=detectCapsules(cap.canvas, cap.w, cap.h);
   const maxW=Math.min(540, (window.innerWidth||540)-64);
   const s=Math.min(1, maxW/cap.w);
+  S._phaseCap=cap; S._phaseScale=s;          // クリック調査用
   const base=(c)=>{ c.width=Math.round(cap.w*s); c.height=Math.round(cap.h*s); const x=c.getContext('2d'); x.drawImage(cap.canvas,0,0,c.width,c.height); x.fillStyle='rgba(10,16,20,.5)'; x.fillRect(0,0,c.width,c.height); return x; };
   // Step1
   const x1=base(cvs[0]); x1.lineWidth=2; x1.strokeStyle='#39d6e0';
@@ -1679,6 +1738,7 @@ async function processFrame(){
 
       if(capsule.type==='thick' && capsule.chatBox){
         const chatCrop = cropCanvas(cap.canvas, capsule.chatBox, CFG.CROP_PAD);
+        if(!isSingleRow(chatCrop)) continue;          // 改行=別人と混ざった誤り → 弾く(在席のみ)
         const chatSig = signature(chatCrop);
         if(chatSig){
           const curURL = chatCrop.toDataURL();          // 比較・開発ビュー用(生)
@@ -1735,7 +1795,9 @@ function hexToRgb(hex){
   return { r:(n>>16)&255, g:(n>>8)&255, b:n&255 };
 }
 // 白文字だけ残して任意色に着色＋背景透明＋余白詰め
-function tintWhite(srcCanvas, rgb){
+function darkenRgb(rgb, f){ return { r:Math.round(rgb.r*f), g:Math.round(rgb.g*f), b:Math.round(rgb.b*f) }; }
+// 白文字だけ残して任意色に着色＋背景透明＋余白詰め。solid=濃く(くっきり)出す
+function tintWhite(srcCanvas, rgb, solid){
   const w=srcCanvas.width, h=srcCanvas.height;
   const ctx=srcCanvas.getContext('2d',{willReadFrequently:true});
   const d=ctx.getImageData(0,0,w,h).data;
@@ -1748,10 +1810,12 @@ function tintWhite(srcCanvas, rgb){
     const r=d[i],g=d[i+1],b=d[i+2];
     const mx=r>g?(r>b?r:b):(g>b?g:b), mn=r<g?(r<b?r:b):(g<b?g:b);
     const bright=r*0.299+g*0.587+b*0.114;
-    // 白っぽい(=文字)だけ残し、明るさをアルファに。背景や色付き絵文字は透明。
-    if((mx-mn)<=SP && bright>120){
-      const a=Math.min(255, Math.max(0, (bright-120)/135*255));
-      od[i]=rgb.r; od[i+1]=rgb.g; od[i+2]=rgb.b; od[i+3]=a;
+    // 白っぽい(=文字)だけ残す。背景や色付き絵文字は透明。
+    if((mx-mn)<=SP && bright>112){
+      // solid: 薄い画素も濃く（下限を上げる）。文字がしっかり見えるように。
+      const a = solid ? Math.min(255, Math.max(0, Math.round(150 + (bright-112)/143*105)))
+                      : Math.min(255, Math.max(0, (bright-120)/135*255));
+      od[i]=rgb.r; od[i+1]=rgb.g; od[i+2]=rgb.b; od[i+3]= solid ? 255 : a;
     }else{
       od[i+3]=0;
     }
@@ -1768,8 +1832,8 @@ function tintWhite(srcCanvas, rgb){
   cc.getContext('2d').drawImage(out, minx,miny,cw,ch2, 0,0,cw,ch2);
   return cc.toDataURL();
 }
-function processChatImage(srcCanvas){ return tintWhite(srcCanvas, INK); }       // チャット＝濃色
-function tintName(srcCanvas, hex){ return tintWhite(srcCanvas, hexToRgb(hex)); } // 名前＝プレイヤー色
+function processChatImage(srcCanvas){ return tintWhite(srcCanvas, {r:0,g:0,b:0}, true); }          // チャット＝濃い黒・くっきり
+function tintName(srcCanvas, hex){ return tintWhite(srcCanvas, darkenRgb(hexToRgb(hex),0.55), true); } // 名前＝濃いめの色・くっきり
 
 /* ---- 時刻表記 ---- */
 function timeAgo(ts){
@@ -1802,9 +1866,13 @@ function entryHTML(e){
   const nameEl = e.nameImg
     ? `<img class="ce-name-img" src="${e.nameImg}" alt="">`
     : `<span class="ce-name">${escapeHtml(e.name)}</span>`;
-  return `<div class="ce" data-id="${e.id}" data-ts="${e.ts}" style="--ce-color:${e.color}">
-    <div class="ce-head">${nameEl}<span class="ce-time">${timeAgo(e.ts)}</span></div>
-    <div class="ce-msg"><img src="${e.img}" alt=""></div>
+  const body = e.idle
+    ? `<div class="ce-idle">やることなし</div>`
+    : `<div class="ce-msg"><img src="${e.img}" alt=""></div>`;
+  const timeEl = e.idle ? '' : `<span class="ce-time">${timeAgo(e.ts)}</span>`;
+  return `<div class="ce${e.idle?' idle':''}" data-id="${e.id}" data-ts="${e.ts}" style="--ce-color:${e.color}">
+    <div class="ce-head">${nameEl}${timeEl}</div>
+    ${body}
   </div>`;
 }
 
@@ -1819,11 +1887,14 @@ function renderChat(){
   if(S.view.mode === 'player'){
     items = S.timeline.filter(e=>e.name===S.view.player).slice().reverse();
   } else if(everyone){
+    // 今いる人は全員（チャットしてない人も「やることなし」で表示）
     items = [];
     for(const p of S.players){
+      if(!p.present) continue;
       let last=null;
       for(let i=S.timeline.length-1;i>=0;i--){ if(S.timeline[i].name===p.name){ last=S.timeline[i]; break; } }
       if(last) items.push(last);
+      else items.push({ id:'idle-'+p.name, name:p.name, nameImg:p.nameDisp||null, color:p.color, idle:true, ts:Date.now() });
     }
   } else {
     items = S.timeline.slice().reverse();
@@ -2001,12 +2072,10 @@ async function ocrSpeak(canvas){
 async function announceChat(player, nameCrop, chatCrop){
   if(!('speechSynthesis' in window)) return;
   try{
-    if(player.nameText==null){                                   // 名前は一度だけOCRして保持
-      player.nameText = (await ocrName(whitenForOCR(nameCrop))).replace(/\s+/g,'') || '';
-    }
+    // 名前は読まない。濃い(白文字)を黒文字化した高コントラスト画像でOCR。
     let chatText='';
     if(chatCrop) chatText = (await ocrSpeak(whitenForOCR(chatCrop))).replace(/[\u3000\s]+/g,'');
-    speakText(player.nameText, chatText);
+    speakText('', chatText);
   }catch(e){}
 }
 // 新規チャット時の通知（モードで分岐）
